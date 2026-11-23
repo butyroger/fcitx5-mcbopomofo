@@ -40,7 +40,11 @@ add_library(SmartLearningLib
         UserDataFolder.cpp
         UserOverrideStore.cpp
         UserPhraseFile.h
-        UserPhraseFile.cpp)
+        UserPhraseFile.cpp
+        VocabularyFile.h
+        VocabularyFile.cpp
+        ReadingExtraction.h
+        ReadingExtraction.cpp)
 target_include_directories(SmartLearningLib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../Engine
@@ -61,14 +65,18 @@ if (ENABLE_TEST)
                 LearningPathsTest.cpp
                 MixedInputTest.cpp
                 QuickNumbersTest.cpp
+                ReadingExtractionTest.cpp
                 RemovedEntriesTest.cpp
                 SymbolTableTest.cpp
                 TemporaryPhrasesTest.cpp
                 TextTemplatesTest.cpp
                 UserDataFolderTest.cpp
                 UserOverrideStoreTest.cpp
-                UserPhraseFileTest.cpp)
+                UserPhraseFileTest.cpp
+                VocabularyFileTest.cpp)
         target_link_libraries(SmartLearningLibTest GTest::gtest_main SmartLearningLib)
+        target_compile_definitions(SmartLearningLibTest PRIVATE
+                MCBOPOMOFO_TEST_FULL_DATA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../data/data.txt")
         include(GoogleTest)
         gtest_discover_tests(SmartLearningLibTest)
 
