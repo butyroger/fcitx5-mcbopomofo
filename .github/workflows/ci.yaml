@@ -17,7 +17,7 @@ jobs:
             "linuxmintd/mint22-amd64",
             "linuxmintd/mint21-amd64",
           ]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -44,7 +44,7 @@ jobs:
           ctest --output-on-failure
 
   build_archlinux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: archlinux:base-devel
 
     steps:
@@ -83,7 +83,7 @@ jobs:
             "fedora:40",
             "fedora:39",
           ]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -105,7 +105,7 @@ jobs:
           ctest --output-on-failure
 
   build_manjaro:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     container: manjarolinux/base:latest
     steps:
       - uses: actions/checkout@v7
