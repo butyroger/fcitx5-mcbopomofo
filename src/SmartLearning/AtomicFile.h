@@ -2,6 +2,8 @@
 #define SRC_SMARTLEARNING_ATOMICFILE_H_
 
 #include <filesystem>
+#include <optional>
+#include <string>
 #include <string_view>
 
 namespace McBopomofo::SmartLearning {
@@ -19,6 +21,10 @@ bool writeFileAtomically(const std::filesystem::path& path,
 // created; false if it already existed or on any error.
 bool createFileIfAbsent(const std::filesystem::path& path,
                         std::string_view content);
+
+// Reads the whole file. Returns nullopt if it is not a regular file or
+// cannot be read completely.
+std::optional<std::string> readWholeFile(const std::filesystem::path& path);
 
 }  // namespace McBopomofo::SmartLearning
 

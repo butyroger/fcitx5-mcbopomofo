@@ -2,9 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
-#include <fstream>
 #include <set>
-#include <sstream>
 #include <system_error>
 #include <unordered_map>
 #include <utility>
@@ -94,25 +92,6 @@ bool isMixedCase(const std::string& word) {
   return word.size() > 1 &&
          std::any_of(word.begin() + 1, word.end(), isAsciiUpper) &&
          word != asciiUppercased(word);
-}
-
-// Reads the whole file. Returns nullopt if it is not a regular file or
-// cannot be read completely.
-std::optional<std::string> readWholeFile(const fs::path& path) {
-  std::error_code ec;
-  if (!fs::is_regular_file(path, ec)) {
-    return std::nullopt;
-  }
-  std::ifstream in(path, std::ios::binary);
-  if (!in) {
-    return std::nullopt;
-  }
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  if (in.bad()) {
-    return std::nullopt;
-  }
-  return ss.str();
 }
 
 // Splits on |separator|. Empty parts are dropped unless |keepEmpty|.

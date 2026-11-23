@@ -15,10 +15,16 @@ add_library(SmartLearningLib
         LearningPaths.cpp
         MixedInput.h
         MixedInput.cpp
+        RemovedEntries.h
+        RemovedEntries.cpp
+        TemporaryPhrases.h
+        TemporaryPhrases.cpp
         UserOverrideStore.h
         UserDataFolder.h
         UserDataFolder.cpp
-        UserOverrideStore.cpp)
+        UserOverrideStore.cpp
+        UserPhraseFile.h
+        UserPhraseFile.cpp)
 target_include_directories(SmartLearningLib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../Engine)
@@ -33,8 +39,11 @@ if (ENABLE_TEST)
                 EnglishWordsTest.cpp
                 LearningPathsTest.cpp
                 MixedInputTest.cpp
+                RemovedEntriesTest.cpp
+                TemporaryPhrasesTest.cpp
                 UserDataFolderTest.cpp
-                UserOverrideStoreTest.cpp)
+                UserOverrideStoreTest.cpp
+                UserPhraseFileTest.cpp)
         target_link_libraries(SmartLearningLibTest GTest::gtest_main SmartLearningLib)
         include(GoogleTest)
         gtest_discover_tests(SmartLearningLibTest)

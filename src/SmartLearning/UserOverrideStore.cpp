@@ -1,8 +1,6 @@
 #include "UserOverrideStore.h"
 
-#include <fstream>
 #include <optional>
-#include <sstream>
 #include <system_error>
 
 #include "AtomicFile.h"
@@ -12,25 +10,6 @@ namespace McBopomofo::SmartLearning {
 namespace fs = std::filesystem;
 
 namespace {
-
-// Reads the whole file. Returns nullopt if it is not a regular file or
-// cannot be read completely.
-std::optional<std::string> readWholeFile(const fs::path& path) {
-  std::error_code ec;
-  if (!fs::is_regular_file(path, ec)) {
-    return std::nullopt;
-  }
-  std::ifstream in(path, std::ios::binary);
-  if (!in) {
-    return std::nullopt;
-  }
-  std::ostringstream ss;
-  ss << in.rdbuf();
-  if (in.bad()) {
-    return std::nullopt;
-  }
-  return ss.str();
-}
 
 bool hasTxtExtension(const fs::path& path) { return path.extension() == ".txt"; }
 

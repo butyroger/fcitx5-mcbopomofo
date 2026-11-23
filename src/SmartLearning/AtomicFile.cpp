@@ -4,6 +4,8 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <system_error>
 
@@ -91,6 +93,23 @@ bool createFileIfAbsent(const fs::path& path, std::string_view content) {
     ok = false;
   }
   return ok;
+}
+
+std::optional<std::string> readWholeFile(const fs::path& path) {
+  std::error_code ec;
+  if (!fs::is_regular_file(path, ec)) {
+    return std::nullopt;
+  }
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    return std::nullopt;
+  }
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  if (in.bad()) {
+    return std::nullopt;
+  }
+  return ss.str();
 }
 
 }  // namespace McBopomofo::SmartLearning
