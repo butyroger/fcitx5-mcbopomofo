@@ -509,5 +509,9 @@ msgid "Add a space between Chinese and English"
 msgstr "中英文之間自動加空格"
 
 #: src/McBopomofo.h
+msgid "Half-width punctuation after English and digits"
+msgstr "英文、數字後的標點用半形"
+
+#: src/McBopomofo.h
 msgid "Fix the case of words like iPhone upon a space"
 msgstr "按空白時修正英文大小寫（如 iPhone）"

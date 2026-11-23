@@ -862,6 +862,8 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
       config_.smartChineseEnglishSwitchEnabled.value());
   keyHandler_->setAutoSpaceBetweenChineseAndEnglish(
       config_.autoSpaceBetweenChineseAndEnglish.value());
+  keyHandler_->setHalfWidthPunctuationAfterEnglish(
+      config_.halfWidthPunctuationAfterEnglish.value());
   keyHandler_->setFixEnglishWordCase(config_.fixEnglishWordCase.value());
 
   if (mode == McBopomofo::InputMode::McBopomofo) {

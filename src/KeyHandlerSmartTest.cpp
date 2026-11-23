@@ -375,4 +375,73 @@ TEST_F(KeyHandlerSmartTest, ResetLeavesEnglishMode) {
   EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
 }
 
+TEST_F(KeyHandlerSmartTest, HalfWidthPunctuationAfterDigits) {
+  // Moving the cursor leaves the English mode, so the next key is handled as
+  // a punctuation key again.
+  type("ok300");
+  press(Key::namedKey(Key::KeyName::LEFT));
+  press(Key::namedKey(Key::KeyName::RIGHT));
+  type("!");
+  EXPECT_EQ(composingBuffer(), "ok300!");
+}
+
+TEST_F(KeyHandlerSmartTest, HalfWidthPunctuationAfterEnglish) {
+  type("hello");
+  press(Key::namedKey(Key::KeyName::LEFT));
+  press(Key::namedKey(Key::KeyName::RIGHT));
+  type("!");
+  EXPECT_EQ(composingBuffer(), "hello!");
+
+  restart();
+  keyHandler_->setHalfWidthPunctuationAfterEnglish(false);
+  type("hello");
+  press(Key::namedKey(Key::KeyName::LEFT));
+  press(Key::namedKey(Key::KeyName::RIGHT));
+  type("!");
+  EXPECT_EQ(composingBuffer(), "hello！");
+}
+
+TEST_F(KeyHandlerSmartTest, FullWidthAfterChinese) {
+  type("su3cl3!");
+  EXPECT_EQ(composingBuffer(), "你好！");
+}
+
+TEST_F(KeyHandlerSmartTest, ControlForcesFullWidth) {
+  type("hello");
+  press(Key::namedKey(Key::KeyName::LEFT));
+  press(Key::namedKey(Key::KeyName::RIGHT));
+  press(Key::asciiKey('!', false, true));
+  EXPECT_EQ(composingBuffer(), "hello！");
+}
+
+TEST_F(KeyHandlerSmartTest, BackspaceRemovesAutoSpace) {
+  type("su3cl3iphone");
+  ASSERT_EQ(composingBuffer(), "你好 iphone");
+  for (int i = 0; i < 6; i++) {
+    press(Key::asciiKey(Key::BACKSPACE));
+  }
+  EXPECT_EQ(composingBuffer(), "你好");
+}
+
+TEST_F(KeyHandlerSmartTest, BackspaceKeepsSpaceWhenEnglishRemainsAfterCursor) {
+  type("su3cl3hello");
+  ASSERT_EQ(composingBuffer(), "你好 hello");
+  // Put the cursor after "he" and delete both letters.
+  for (int i = 0; i < 3; i++) {
+    press(Key::namedKey(Key::KeyName::LEFT));
+  }
+  press(Key::asciiKey(Key::BACKSPACE));
+  press(Key::asciiKey(Key::BACKSPACE));
+  EXPECT_EQ(composingBuffer(), "你好 llo");
+}
+
+TEST_F(KeyHandlerSmartTest, BackspaceDeletingEnglishKeepsSpaceWhenSettingOff) {
+  type("su3cl3hello");
+  keyHandler_->setAutoSpaceBetweenChineseAndEnglish(false);
+  for (int i = 0; i < 5; i++) {
+    press(Key::asciiKey(Key::BACKSPACE));
+  }
+  EXPECT_EQ(composingBuffer(), "你好 ");
+}
+
 }  // namespace McBopomofo

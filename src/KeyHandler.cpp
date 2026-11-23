@@ -609,7 +609,9 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       return handlePunctuation(unigram, state, stateCallback, errorCallback);
     }
 
-    if (halfWidthPunctuationEnabled_) {
+    if (halfWidthPunctuationEnabled_ || isAfterHalfWidthAlphanumeric()) {
+      // Once half width is chosen, keys missing here are not retried as full
+      // width.
       unigram = std::string(kHalfWidthPunctuationKeyPrefix) +
                 GetKeyboardLayoutName(reading_.keyboardLayout()) + "_" + chrStr;
       if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
@@ -620,19 +622,19 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
         return true;
       }
-    }
+    } else {
+      // Bopomofo layout-specific punctuation handling.
+      unigram = std::string(kPunctuationKeyPrefix) +
+                GetKeyboardLayoutName(reading_.keyboardLayout()) + "_" + chrStr;
+      if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
+        return true;
+      }
 
-    // Bopomofo layout-specific punctuation handling.
-    unigram = std::string(kPunctuationKeyPrefix) +
-              GetKeyboardLayoutName(reading_.keyboardLayout()) + "_" + chrStr;
-    if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
-      return true;
-    }
-
-    // Not handled, try generic punctuations.
-    unigram = std::string(kPunctuationKeyPrefix) + chrStr;
-    if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
-      return true;
+      // Not handled, try generic punctuations.
+      unigram = std::string(kPunctuationKeyPrefix) + chrStr;
+      if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
+        return true;
+      }
     }
 
     // Upper case letters.
@@ -940,6 +942,21 @@ void KeyHandler::setSmartChineseEnglishSwitchEnabled(bool enabled) {
   }
 }
 
+void KeyHandler::setHalfWidthPunctuationAfterEnglish(bool enabled) {
+  halfWidthPunctuationAfterEnglish_ = enabled;
+}
+
+bool KeyHandler::isAfterHalfWidthAlphanumeric() const {
+  if (!halfWidthPunctuationAfterEnglish_ ||
+      inputMode_ != InputMode::McBopomofo || !reading_.isEmpty()) {
+    return false;
+  }
+  size_t cursor = grid_.cursor();
+  return cursor > 0 &&
+         SmartLearning::IsHalfWidthAlphanumericReading(
+             grid_.readings()[cursor - 1]);
+}
+
 void KeyHandler::setAutoSpaceBetweenChineseAndEnglish(bool enabled) {
   autoSpaceBetweenChineseAndEnglish_ = enabled;
 }
@@ -1245,7 +1262,14 @@ bool KeyHandler::handleDeleteKeys(Key key, McBopomofo::InputState* state,
     bool isValidDelete = false;
 
     if (key.ascii == Key::BACKSPACE && grid_.cursor() > 0) {
+      bool deletingEnglish =
+          SmartLearning::IsEnglishReading(grid_.readings()[grid_.cursor() - 1]);
       grid_.deleteReadingBeforeCursor();
+      if (deletingEnglish && autoSpaceBetweenChineseAndEnglish_ &&
+          SmartLearning::ShouldRemoveAutoSpaceAfterDeletingEnglish(
+              grid_.readings(), grid_.cursor())) {
+        grid_.deleteReadingBeforeCursor();
+      }
       isValidDelete = true;
     } else if (key.ascii == Key::DELETE && grid_.cursor() < grid_.length()) {
       grid_.deleteReadingAfterCursor();

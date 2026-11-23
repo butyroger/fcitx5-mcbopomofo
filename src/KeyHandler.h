@@ -198,6 +198,10 @@ class KeyHandler {
   // each other.
   void setAutoSpaceBetweenChineseAndEnglish(bool enabled);
 
+  // Sets whether punctuation typed right after an English letter or a digit
+  // is half width, like "hello," and "3.5".
+  void setHalfWidthPunctuationAfterEnglish(bool enabled);
+
   // Sets whether the case of an English word is fixed upon a space, like
   // "iphone" to "iPhone".
   void setFixEnglishWordCase(bool enabled);
@@ -362,6 +366,10 @@ class KeyHandler {
   // Puts a space before English typed after Chinese (|beforeEnglish|), or
   // before Chinese typed after English. Returns true if a space was put.
   bool insertAutoSpaceIfNeeded(bool beforeEnglish);
+
+  // Whether the cursor is right after an English letter or a half-width digit
+  // with no bopomofo reading pending.
+  bool isAfterHalfWidthAlphanumeric() const;
   // Turns the unfinished reading into English and starts the English mode
   // with the text.
   void switchToSmartEnglish(const std::string& text);
@@ -417,6 +425,7 @@ class KeyHandler {
   bool bopomofoFontAnnotationSupportEnabled_ = false;
   bool smartChineseEnglishSwitchEnabled_ = true;
   bool autoSpaceBetweenChineseAndEnglish_ = true;
+  bool halfWidthPunctuationAfterEnglish_ = true;
   bool fixEnglishWordCase_ = true;
   KeyHandlerCtrlEnter ctrlEnterKey_ = KeyHandlerCtrlEnter::Disabled;
   std::function<void(const std::string&)> onAddNewPhrase_;

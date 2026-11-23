@@ -173,6 +173,11 @@ FCITX_CONFIGURATION(
         this, "AutoSpaceBetweenChineseAndEnglish",
         _("Add a space between Chinese and English"), true};
 
+    // Punctuation right after English letters or digits is half width.
+    fcitx::Option<bool> halfWidthPunctuationAfterEnglish{
+        this, "HalfWidthPunctuationAfterEnglish",
+        _("Half-width punctuation after English and digits"), true};
+
     // Fix the case of English words, like "iphone" to "iPhone", upon a space.
     fcitx::Option<bool> fixEnglishWordCase{
         this, "FixEnglishWordCase",
