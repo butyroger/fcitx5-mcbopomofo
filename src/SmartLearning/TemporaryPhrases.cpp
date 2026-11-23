@@ -401,6 +401,9 @@ void TemporaryPhraseStore::merge() {
 }
 
 bool TemporaryPhraseStore::isRemoved(const std::string& phrase, double time) {
+  // The own file rounds the pick time (%.0f) while removed.txt truncates the
+  // removal time, so a phrase picked and forgotten within the same second on
+  // different programs may stay listed (report D-e).
   return removedEntries_->removedTime(RemovedEntries::kTemporary, phrase) >=
          time;
 }

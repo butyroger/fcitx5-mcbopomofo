@@ -489,6 +489,8 @@ bool CommonSentenceStore::add(const std::string& sentence) {
   const double now = wallNow_();
   auto it = localEntries_.find(sentence);
   Entry entry = it == localEntries_.end() ? Entry{0, now, true} : it->second;
+  // A sentence dropped while removed is re-added from kThreshold, not from
+  // its old count (the sentence version of report D-b).
   entry.count = std::max(entry.count, kThreshold);
   entry.lastUsed = now;
   entry.pinned = true;

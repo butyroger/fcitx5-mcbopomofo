@@ -48,14 +48,16 @@ class RemovedEntries {
 
   // Records the removal of the entry at |wallNow| (Unix seconds), replacing
   // an earlier one. Returns false, writing nothing, when there is no folder,
-  // the key or kind holds a tab or a line break, the file exists but cannot
+  // the key or kind holds a tab or any line break (LF, CR, VT, FF, NEL, LINE
+  // SEPARATOR or PARAGRAPH SEPARATOR), the file exists but cannot
   // be read, the user data folder holding the learning folder is missing, or
   // the write fails.
   bool add(std::string_view kind, std::string_view key, double wallNow);
 
   // Takes the entry out. Returns true if it was taken out, or was not there
-  // (nothing is written then); false if the file exists but cannot be read
-  // or the write fails.
+  // (nothing is written then); false, writing nothing, for a key or kind that
+  // add() refuses, if the file exists but cannot be read, or if the write
+  // fails.
   bool remove(std::string_view kind, std::string_view key);
 
  private:

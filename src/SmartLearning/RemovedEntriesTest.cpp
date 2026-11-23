@@ -203,9 +203,19 @@ TEST_F(RemovedEntriesTest, UnreadableFileIsNeverWritten) {
 TEST_F(RemovedEntriesTest, KeysThatBreakTheLineFormatAreRefused) {
   RemovedEntries entries([this] { return now_; });
   entries.setLearningFolder(learning_);
-  EXPECT_FALSE(entries.add(RemovedEntries::kEnglish, "a\tb", 10));
-  EXPECT_FALSE(entries.add(RemovedEntries::kEnglish, "a\nb", 10));
+  for (const char* key : {"a\tb", "a\nb", "a\rb", "a\vb", "a\fb", "a\u0085b",
+                          "a\u2028b", "a\u2029b", "ab\r"}) {
+    EXPECT_FALSE(entries.add(RemovedEntries::kEnglish, key, 10)) << key;
+    EXPECT_FALSE(entries.add(key, "ab", 10)) << key;
+  }
   EXPECT_FALSE(fs::exists(removedFile()));
+
+  writeFile(removedFile(), "english\tab\t10\n");
+  EXPECT_FALSE(entries.remove(RemovedEntries::kEnglish, "ab\r"));
+  EXPECT_FALSE(entries.remove("english\n", "ab"));
+  EXPECT_EQ(readFile(removedFile()), "english\tab\t10\n");
+  // Other characters are fine.
+  EXPECT_TRUE(entries.add(RemovedEntries::kEnglish, "a b\u00A0c", 20));
 }
 
 TEST_F(RemovedEntriesTest, ReloadIfChangedLooksAtTheStamp) {

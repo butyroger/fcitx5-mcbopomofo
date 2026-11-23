@@ -17,6 +17,12 @@ namespace {
 
 constexpr char kRemovedFilename[] = "removed.txt";
 
+// A tab or any line break (as splitLines() sees them) would break the line
+// format of the file.
+bool breaksLineFormat(std::string_view s) {
+  return s.find('\t') != std::string_view::npos || splitLines(s).size() != 1;
+}
+
 std::string entryKey(std::string_view kind, std::string_view key) {
   std::string result(kind);
   result += '\t';
@@ -78,10 +84,8 @@ bool RemovedEntries::reloadIfChanged() {
 
 bool RemovedEntries::add(std::string_view kind, std::string_view key,
                          double wallNow) {
-  // A tab or a line break would break the line format of the file.
-  if (learningFolder_.empty() ||
-      kind.find_first_of("\t\n") != std::string_view::npos ||
-      key.find_first_of("\t\n") != std::string_view::npos) {
+  if (learningFolder_.empty() || breaksLineFormat(kind) ||
+      breaksLineFormat(key)) {
     return false;
   }
   std::unordered_map<std::string, double> entries;
@@ -94,7 +98,8 @@ bool RemovedEntries::add(std::string_view kind, std::string_view key,
 }
 
 bool RemovedEntries::remove(std::string_view kind, std::string_view key) {
-  if (learningFolder_.empty()) {
+  if (learningFolder_.empty() || breaksLineFormat(kind) ||
+      breaksLineFormat(key)) {
     return false;
   }
   std::unordered_map<std::string, double> entries;
