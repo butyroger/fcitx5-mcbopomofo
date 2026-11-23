@@ -41,7 +41,7 @@ std::string hostName() {
 }
 
 // Sends the arguments to the window already open, which comes to the front.
-// False when no window answers.
+// False when no window answers or the arguments cannot be sent.
 bool sendToOpenWindow(const QString& name,
                       const std::vector<std::string>& arguments) {
   QLocalSocket socket;
@@ -51,11 +51,15 @@ bool sendToOpenWindow(const QString& name,
   }
   std::string message =
       McBopomofo::VocabularyManager::encodeLaunchMessage(arguments);
+  // Without arguments nothing is written, and the window only comes to the
+  // front.
   socket.write(message.data(), static_cast<qint64>(message.size()));
-  if (!socket.waitForBytesWritten(1000)) {
+  if (!message.empty() && !socket.waitForBytesWritten(1000)) {
     std::fprintf(stderr, "mcbopomofo-vocabulary: cannot reach the open "
                          "window (%s)\n",
                  socket.errorString().toLocal8Bit().constData());
+    socket.abort();
+    return false;
   }
   socket.disconnectFromServer();
   if (socket.state() != QLocalSocket::UnconnectedState) {
@@ -141,7 +145,8 @@ int main(int argc, char* argv[]) {
                     McBopomofo::VocabularyManager::parseArguments(arguments);
                 if (options.error.empty()) {
                   // Opened by the input method after being opened without a
-                  // device ID: the window can now write.
+                  // device ID, the window can now write; the input method's
+                  // folder may also have changed.
                   if (auto adopted = McBopomofo::VocabularyManager::adoptLaunch(
                           window.currentSettings(), options, env,
                           hostName())) {

@@ -93,9 +93,10 @@ std::vector<std::string> decodeLaunchMessage(std::string_view message);
 
 // The settings of the open window when it is opened again with |options|:
 // a read-only window opened with a device ID (by the input method) takes the
-// device ID, and the data folder if one is given, and can then write.
-// nullopt when nothing changes: no device ID is given, or the window can
-// already write.
+// device ID, and the data folder if one is given, and can then write; a
+// window of the same device follows a different data folder given. nullopt
+// when nothing changes: no device ID is given, it is another device's, or
+// the folder is the same.
 std::optional<Settings> adoptLaunch(const Settings& current,
                                     const LaunchOptions& options,
                                     const GetEnv& env,

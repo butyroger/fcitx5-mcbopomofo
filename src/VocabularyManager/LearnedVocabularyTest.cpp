@@ -291,6 +291,32 @@ TEST_F(LearnedVocabularyTest, AddToPhrasesWithoutDataFile) {
             1u);
 }
 
+TEST_F(LearnedVocabularyTest, RemoveStopsAtTheFirstFailure) {
+  writeFile(own("english"), "apple\t3\nkiwi\t2\n");
+  auto vocabulary = make(kDeviceID);
+  // A key with a tab cannot be recorded in removed.txt.
+  auto result =
+      vocabulary->remove(LearnedKind::kEnglish, {"apple", "bad\tword", "kiwi"});
+  EXPECT_EQ(result.status, DeleteStatus::kWriteFailed);
+  EXPECT_EQ(result.done, 1u);
+  EXPECT_EQ(keysOf(vocabulary->rows(LearnedKind::kEnglish, statusTexts())),
+            (std::vector<std::string>{"kiwi"}));
+}
+
+TEST_F(LearnedVocabularyTest, PromotedPhraseCountsWhenForgettingFails) {
+  auto at = std::to_string(static_cast<long long>(kNow - kDay));
+  writeFile(own("temporary"), "測試 ㄘㄜˋ-ㄕˋ " + at + "\n");
+  writeFile(folder_ / "data.txt", "");
+  // removed.txt cannot be read, so the phrase cannot be forgotten.
+  fs::create_directories(removed());
+  auto vocabulary = make(kDeviceID);
+  auto result = vocabulary->addToPhrases({"測試 ㄘㄜˋ-ㄕˋ"});
+  EXPECT_EQ(result.status, DeleteStatus::kWriteFailed);
+  // data.txt changed, so the input method is to be told.
+  EXPECT_EQ(result.done, 1u);
+  EXPECT_EQ(readFile(folder_ / "data.txt"), "測試 ㄘㄜˋ-ㄕˋ\n");
+}
+
 // MARK: Without a device ID or a folder
 
 TEST_F(LearnedVocabularyTest, ReadOnlyWithoutDeviceID) {
@@ -368,6 +394,31 @@ TEST(AdoptLaunchTest, ReadOnlyWindowTakesTheDeviceID) {
   Settings writable = *adopted;
   options.deviceID = "FFFF0000";
   EXPECT_FALSE(adoptLaunch(writable, options, env, "host").has_value());
+  // The same device in the same folder.
+  options.deviceID = "ABCD1234";
+  EXPECT_FALSE(adoptLaunch(writable, options, env, "host").has_value());
+  options.dataFolder.reset();
+  EXPECT_FALSE(adoptLaunch(writable, options, env, "host").has_value());
+}
+
+TEST(AdoptLaunchTest, WritableWindowFollowsAChangedDataFolder) {
+  GetEnv env = [](const char*) -> std::optional<std::string> {
+    return std::nullopt;
+  };
+  LaunchOptions first;
+  first.dataFolder = "/data/old";
+  first.deviceID = "ABCD1234";
+  Settings writable = resolveSettings(first, env, "host");
+  LaunchOptions later = first;
+  later.dataFolder = "/data/moved";
+  auto adopted = adoptLaunch(writable, later, env, "host");
+  ASSERT_TRUE(adopted.has_value());
+  EXPECT_EQ(adopted->dataFolder, fs::path("/data/moved"));
+  EXPECT_EQ(adopted->deviceID, "ABCD1234");
+  EXPECT_FALSE(adopted->readOnly);
+  // Another device's folder is not taken.
+  later.deviceID = "FFFF0000";
+  EXPECT_FALSE(adoptLaunch(writable, later, env, "host").has_value());
 }
 
 }  // namespace McBopomofo::VocabularyManager

@@ -253,11 +253,13 @@ BatchResult LearnedVocabulary::addToPhrases(
                                            : DeleteStatus::kFileMissing;
       return result;
     }
+    // Counted once data.txt has the phrase, so that the input method is told
+    // even if forgetting it fails.
+    ++result.done;
     if (!temporaryPhrases_->forget(value, reading)) {
       result.status = failure(temporaryPhrases_->isLocalFilePending());
       return result;
     }
-    ++result.done;
   }
   result.status = DeleteStatus::kDeleted;
   return result;

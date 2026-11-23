@@ -89,7 +89,8 @@ class LearnedVocabulary {
   // Adds the temporary phrases of |keys| to the Chinese phrases (data.txt,
   // taking them out of exclude-phrases.txt), then forgets them. A phrase
   // already in data.txt is only forgotten. Nothing is done when data.txt
-  // does not exist (kFileMissing). Stops at the first one that fails.
+  // does not exist (kFileMissing). Stops at the first one that fails; a
+  // phrase written to data.txt counts as done even if forgetting it fails.
   BatchResult addToPhrases(const std::vector<std::string>& keys);
 
  private:

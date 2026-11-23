@@ -242,10 +242,19 @@ std::optional<Settings> adoptLaunch(const Settings& current,
                                     const LaunchOptions& options,
                                     const GetEnv& env,
                                     std::string_view hostName) {
-  if (!current.readOnly || !options.deviceID || options.deviceID->empty()) {
+  if (!options.deviceID || options.deviceID->empty()) {
     return std::nullopt;
   }
-  return resolveSettings(options, env, hostName);
+  if (current.readOnly) {
+    return resolveSettings(options, env, hostName);
+  }
+  // The input method of the same device now uses another folder.
+  if (*options.deviceID == current.deviceID && options.dataFolder &&
+      !options.dataFolder->empty() &&
+      std::filesystem::path(*options.dataFolder) != current.dataFolder) {
+    return resolveSettings(options, env, hostName);
+  }
+  return std::nullopt;
 }
 
 }  // namespace McBopomofo::VocabularyManager
