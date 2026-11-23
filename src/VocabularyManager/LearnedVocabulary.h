@@ -22,6 +22,11 @@ class TemporaryPhraseStore;
 // English words, the common sentences and the temporary phrases. They are
 // read and written through the same stores as the input method's, as the
 // same device. Nothing here depends on Qt.
+//
+// The window holds no unsaved change, so every action reads the files again
+// from scratch: what the input method took out of this device's files
+// meanwhile (a temporary phrase it learned for good, for example) is not
+// written back from a copy kept in memory.
 namespace McBopomofo::VocabularyManager {
 
 enum class LearnedKind { kEnglish, kSentences, kTemporary };
@@ -97,9 +102,13 @@ class LearnedVocabulary {
   // Why a store could not write: its own file has not loaded yet (the
   // folder may still be syncing), or a write failed.
   static DeleteStatus failure(bool pending);
+  // Makes new stores, which read the files again when used.
+  void rebuildStores();
 
   std::filesystem::path dataFolder_;
   std::filesystem::path learningFolder_;
+  std::string deviceID_;
+  std::string hostName_;
   bool readOnly_;
   std::function<double()> wallNow_;
   std::shared_ptr<SmartLearning::RemovedEntries> removedEntries_;

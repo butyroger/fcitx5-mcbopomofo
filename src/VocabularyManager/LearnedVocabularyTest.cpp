@@ -12,6 +12,7 @@
 #include "LearnedVocabulary.h"
 #include "LearningPaths.h"
 #include "ManagerSettings.h"
+#include "TemporaryPhrases.h"
 
 namespace McBopomofo::VocabularyManager {
 namespace fs = std::filesystem;
@@ -276,6 +277,36 @@ TEST_F(LearnedVocabularyTest, AddTemporaryPhrasesToPhrases) {
             std::string::npos);
   EXPECT_EQ(vocabulary->addToPhrases({}).status,
             DeleteStatus::kNothingSelected);
+}
+
+TEST_F(LearnedVocabularyTest, PhraseLearnedMeanwhileIsNotWrittenBack) {
+  auto at = std::to_string(static_cast<long long>(kNow - kDay));
+  writeFile(own("temporary"), "小麥 ㄒㄧㄠˇ-ㄇㄞˋ " + at + "\n" +
+                                  "測試 ㄘㄜˋ-ㄕˋ " + at + "\n" +
+                                  "留下 ㄌㄧㄡˊ-ㄒㄧㄚˋ " + at + "\n");
+  writeFile(folder_ / "data.txt", "");
+  auto vocabulary = make(kDeviceID);
+  ASSERT_EQ(vocabulary->rows(LearnedKind::kTemporary, statusTexts()).size(),
+            3u);
+
+  // Meanwhile the input method learns 小麥 for good: it takes it out of its
+  // own file, recording nothing in removed.txt.
+  SmartLearning::TemporaryPhraseStore inputMethod(kDeviceID, kHostName,
+                                                  [this] { return now_; });
+  inputMethod.setLearningFolder(learning());
+  inputMethod.remove("小麥", "ㄒㄧㄠˇ-ㄇㄞˋ");
+  ASSERT_TRUE(inputMethod.save());
+  ASSERT_EQ(readFile(own("temporary")).find("小麥"), std::string::npos);
+
+  EXPECT_EQ(
+      vocabulary->remove(LearnedKind::kTemporary, {"測試 ㄘㄜˋ-ㄕˋ"}).status,
+      DeleteStatus::kDeleted);
+  EXPECT_EQ(readFile(own("temporary")).find("小麥"), std::string::npos);
+  EXPECT_EQ(vocabulary->addToPhrases({"留下 ㄌㄧㄡˊ-ㄒㄧㄚˋ"}).status,
+            DeleteStatus::kDeleted);
+  EXPECT_EQ(readFile(own("temporary")), "");
+  EXPECT_TRUE(
+      vocabulary->rows(LearnedKind::kTemporary, statusTexts()).empty());
 }
 
 TEST_F(LearnedVocabularyTest, AddToPhrasesWithoutDataFile) {

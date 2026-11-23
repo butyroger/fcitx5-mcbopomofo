@@ -90,16 +90,22 @@ LearnedVocabulary::LearnedVocabulary(const fs::path& dataFolder,
                                      std::function<double()> wallNow)
     : dataFolder_(dataFolder),
       learningFolder_(dataFolder / "learning"),
+      deviceID_(deviceID),
+      hostName_(hostName),
       readOnly_(deviceID.empty()),
-      wallNow_(wallNow ? std::move(wallNow) : systemSeconds),
-      removedEntries_(std::make_shared<RemovedEntries>(steadySeconds)) {
+      wallNow_(wallNow ? std::move(wallNow) : systemSeconds) {
+  rebuildStores();
+}
+
+void LearnedVocabulary::rebuildStores() {
   // One reader of removed.txt for the three stores, as in the input method.
+  removedEntries_ = std::make_shared<RemovedEntries>(steadySeconds);
   englishWords_ = std::make_unique<EnglishWordStore>(
-      deviceID, hostName, nullptr, steadySeconds, removedEntries_, wallNow_);
-  sentences_ = std::make_unique<CommonSentenceStore>(deviceID, hostName,
-                                                     wallNow_, removedEntries_);
+      deviceID_, hostName_, nullptr, steadySeconds, removedEntries_, wallNow_);
+  sentences_ = std::make_unique<CommonSentenceStore>(
+      deviceID_, hostName_, wallNow_, removedEntries_);
   temporaryPhrases_ = std::make_unique<TemporaryPhraseStore>(
-      deviceID, hostName, wallNow_, removedEntries_);
+      deviceID_, hostName_, wallNow_, removedEntries_);
   removedEntries_->setLearningFolder(learningFolder_);
   englishWords_->setLearningFolder(learningFolder_);
   sentences_->setLearningFolder(learningFolder_);
@@ -114,8 +120,7 @@ DeleteStatus LearnedVocabulary::failure(bool pending) {
 
 std::vector<VocabularyRow> LearnedVocabulary::rows(
     LearnedKind kind, const SentenceStatusTexts& texts) {
-  // Another program may have changed removed.txt since it was last read.
-  removedEntries_->reloadIfChanged();
+  rebuildStores();
   std::vector<VocabularyRow> rows;
   switch (kind) {
     case LearnedKind::kEnglish:
@@ -163,7 +168,7 @@ CommitResult LearnedVocabulary::add(LearnedKind kind, std::string_view field) {
     result.status = CommitStatus::kReadOnly;
     return result;
   }
-  removedEntries_->reloadIfChanged();
+  rebuildStores();
   if (kind == LearnedKind::kEnglish) {
     if (!isAddableEnglishWord(value)) {
       result.status = CommitStatus::kBadWord;
@@ -194,7 +199,7 @@ BatchResult LearnedVocabulary::remove(LearnedKind kind,
     result.status = DeleteStatus::kReadOnly;
     return result;
   }
-  removedEntries_->reloadIfChanged();
+  rebuildStores();
   for (const auto& key : keys) {
     bool removed = false;
     bool pending = false;
@@ -242,7 +247,7 @@ BatchResult LearnedVocabulary::addToPhrases(
     result.status = DeleteStatus::kFileMissing;
     return result;
   }
-  removedEntries_->reloadIfChanged();
+  rebuildStores();
   for (const auto& key : keys) {
     auto [value, reading] = splitPhraseKey(key);
     // Gives false for a phrase already in data.txt too; it is then only
