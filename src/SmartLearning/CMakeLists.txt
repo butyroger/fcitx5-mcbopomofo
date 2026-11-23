@@ -9,6 +9,8 @@ add_library(SmartLearningLib
         AtomicFile.cpp
         LearningPaths.h
         LearningPaths.cpp
+        MixedInput.h
+        MixedInput.cpp
         UserOverrideStore.h
         UserDataFolder.h
         UserDataFolder.cpp
@@ -24,6 +26,7 @@ if (ENABLE_TEST)
         add_executable(SmartLearningLibTest
                 AtomicFileTest.cpp
                 LearningPathsTest.cpp
+                MixedInputTest.cpp
                 UserDataFolderTest.cpp
                 UserOverrideStoreTest.cpp)
         target_link_libraries(SmartLearningLibTest GTest::gtest_main SmartLearningLib)
