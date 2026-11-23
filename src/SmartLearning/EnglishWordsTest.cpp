@@ -202,19 +202,61 @@ TEST_F(EnglishWordsTest, RemovedFileParsing) {
 }
 
 TEST_F(EnglishWordsTest, NeverOverwritesBeforeLocalLoads) {
-  fs::create_directories(learning_);
+  // The user data folder itself is missing, for example a sync folder that
+  // has not arrived yet.
+  const fs::path dataFolder = root_ / "data";
+  const fs::path learning = dataFolder / "learning";
+  const fs::path own = learning / "english" / "TESTDEV1-test.txt";
   auto store = makeStore();
-  store->setLearningFolder(learning_);
+  store->setLearningFolder(learning);
   store->record({"newword"});
   EXPECT_TRUE(store->hasUnsavedChanges());
   EXPECT_FALSE(store->save());
-  EXPECT_FALSE(fs::exists(english_));
+  EXPECT_FALSE(fs::exists(dataFolder));
   EXPECT_TRUE(store->hasUnsavedChanges());
 
-  writeFile(ownFile(), "oldword\t5\n");
+  writeFile(own, "oldword\t5\n");
   ASSERT_TRUE(store->save());
-  EXPECT_EQ(readFile(ownFile()), "newword\t1\noldword\t5\n");
+  EXPECT_EQ(readFile(own), "newword\t1\noldword\t5\n");
   EXPECT_FALSE(store->hasUnsavedChanges());
+}
+
+TEST_F(EnglishWordsTest, MissingLearningFolderIsCreatedOnSave) {
+  // root_ is the user data folder; learning/ does not exist yet.
+  ASSERT_FALSE(fs::exists(learning_));
+  auto store = makeStore();
+  store->setLearningFolder(learning_);
+  store->record({"zyxwords", "zyxwords"});
+  ASSERT_TRUE(store->save());
+  EXPECT_EQ(readFile(ownFile()), "zyxwords\t2\n");
+
+  auto other = makeStore();
+  other->setLearningFolder(learning_);
+  EXPECT_TRUE(other->isWord("zyxwords"));
+}
+
+TEST_F(EnglishWordsTest, MissingEnglishFolderIsCreatedOnSave) {
+  fs::create_directories(learning_);
+  ASSERT_FALSE(fs::exists(english_));
+  auto store = makeStore();
+  store->setLearningFolder(learning_);
+  store->record({"zyxwords", "zyxwords"});
+  ASSERT_TRUE(store->save());
+  EXPECT_EQ(readFile(ownFile()), "zyxwords\t2\n");
+
+  auto other = makeStore();
+  other->setLearningFolder(learning_);
+  EXPECT_TRUE(other->isWord("zyxwords"));
+}
+
+TEST_F(EnglishWordsTest, EnglishFolderBlockedByFileStaysPending) {
+  // A regular file where the english folder should be.
+  writeFile(english_, "synthetic");
+  auto store = makeStore();
+  store->setLearningFolder(learning_);
+  store->record({"newword"});
+  EXPECT_FALSE(store->save());
+  EXPECT_EQ(readFile(english_), "synthetic");
 }
 
 TEST_F(EnglishWordsTest, UnreadableOwnFileStaysPending) {

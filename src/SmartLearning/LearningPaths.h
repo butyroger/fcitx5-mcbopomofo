@@ -38,6 +38,23 @@ std::optional<std::filesystem::path> findRenamedOwnFile(
     const std::filesystem::path& folder, std::string_view deviceID,
     std::string_view ownFilename);
 
+// Whether a store's own learning folder can be used.
+enum class LearningFolderState {
+  // The folder exists.
+  kExists,
+  // The folder is missing, but it can be created when saving: at most
+  // |missingLevels| folders, |folder| and its parents, are missing, and the
+  // nearest existing parent is a folder.
+  kCreatable,
+  // Anything else: the user data folder itself is missing (for example a sync
+  // folder that has not arrived or is not mounted), something other than a
+  // folder is in the way, or the state cannot be read.
+  kUnavailable,
+};
+
+LearningFolderState learningFolderState(const std::filesystem::path& folder,
+                                        int missingLevels);
+
 }  // namespace McBopomofo::SmartLearning
 
 #endif  // SRC_SMARTLEARNING_LEARNINGPATHS_H_

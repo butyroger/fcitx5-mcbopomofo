@@ -122,8 +122,16 @@ bool UserOverrideStore::save() {
     rebuildMergedModel();
   }
 
+  // Create learning/ when it is missing, but never the user data folder
+  // itself: a missing one may be a sync folder that is not mounted.
+  if (learningFolderState(folder_, 1) == LearningFolderState::kUnavailable) {
+    return false;
+  }
   std::error_code ec;
   fs::create_directories(folder_, ec);
+  if (ec) {
+    return false;
+  }
   const fs::path path = ownFilePath();
   if (!writeFileAtomically(path, localModel_.serialize())) {
     return false;
@@ -151,12 +159,20 @@ bool UserOverrideStore::loadLocalFileIfNeeded() {
   if (!localFilePending_ || !hasFolder_) {
     return false;
   }
-  std::error_code ec;
-  if (!fs::is_directory(folder_, ec)) {
-    // The folder may not have been synced yet.
-    return false;
+  switch (learningFolderState(folder_, 1)) {
+    case LearningFolderState::kUnavailable:
+      // The user data folder may not have been synced yet.
+      return false;
+    case LearningFolderState::kCreatable:
+      // No learning folder yet, so no own file: start empty. Saving creates
+      // the folder.
+      localFilePending_ = false;
+      return true;
+    case LearningFolderState::kExists:
+      break;
   }
 
+  std::error_code ec;
   const fs::path path = ownFilePath();
   if (!fs::exists(fs::symlink_status(path, ec))) {
     // The computer may have been renamed since the file was written.

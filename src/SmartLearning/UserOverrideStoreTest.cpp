@@ -181,14 +181,17 @@ TEST_F(UserOverrideStoreTest, MergesOtherDevicesAndSavesOnlyOwnFile) {
 }
 
 TEST_F(UserOverrideStoreTest, DoesNotOverwriteBeforeLocalFileLoads) {
-  const fs::path notYet = folder_ / "not-yet";
+  // The user data folder itself is missing, for example a sync folder that
+  // has not arrived yet.
+  const fs::path dataFolder = folder_ / "data";
+  const fs::path notYet = dataFolder / "learning";
   UserOverrideStore store("AAAA0001", "mint");
   store.setLearningFolder(notYet);
   store.observe(walks_.oilBefore, walks_.oilAfter, 1, kNow);
   EXPECT_TRUE(store.isLocalFilePending());
   EXPECT_FALSE(store.save());
   EXPECT_FALSE(fs::exists(notYet / "AAAA0001-mint.txt"));
-  EXPECT_FALSE(fs::exists(notYet));
+  EXPECT_FALSE(fs::exists(dataFolder));
 
   // The folder and the earlier file of this device arrive through syncing.
   fs::create_directories(notYet);
@@ -216,6 +219,37 @@ TEST_F(UserOverrideStoreTest, UnreadableOwnFileStaysPending) {
   EXPECT_TRUE(store.isLocalFilePending());
   EXPECT_FALSE(store.save());
   EXPECT_TRUE(fs::is_directory(folder_ / "AAAA0001-mint.txt"));
+}
+
+TEST_F(UserOverrideStoreTest, MissingLearningFolderIsCreatedOnSave) {
+  // folder_ is the user data folder; learning/ does not exist yet.
+  const fs::path learning = folder_ / "learning";
+  UserOverrideStore store("AAAA0001", "mint");
+  store.setLearningFolder(learning);
+  EXPECT_FALSE(store.isLocalFilePending());
+  EXPECT_FALSE(fs::exists(learning));
+  store.observe(walks_.oilBefore, walks_.oilAfter, 1, kNow);
+  ASSERT_TRUE(store.save());
+  EXPECT_NE(readFile(learning / "AAAA0001-mint.txt").find("機油"),
+            std::string::npos);
+  EXPECT_FALSE(store.reloadIfChanged());
+
+  UserOverrideStore other("AAAA0001", "mint");
+  other.setLearningFolder(learning);
+  EXPECT_FALSE(other.isLocalFilePending());
+  EXPECT_EQ(other.mergedModel()->candidateObservationCount("機油"), 1u);
+}
+
+TEST_F(UserOverrideStoreTest, LearningFolderBlockedByFileStaysPending) {
+  // A regular file where the learning folder should be.
+  const fs::path learning = folder_ / "learning";
+  writeFile(learning, "synthetic");
+  UserOverrideStore store("AAAA0001", "mint");
+  store.setLearningFolder(learning);
+  store.observe(walks_.oilBefore, walks_.oilAfter, 1, kNow);
+  EXPECT_TRUE(store.isLocalFilePending());
+  EXPECT_FALSE(store.save());
+  EXPECT_EQ(readFile(learning), "synthetic");
 }
 
 TEST_F(UserOverrideStoreTest, EmptyFolderLoadsAndSaveCreatesOwnFile) {

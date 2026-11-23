@@ -354,8 +354,17 @@ bool EnglishWordStore::save() {
     content += line;
   }
 
+  // Create learning/english/ when it is missing, but never the user data
+  // folder itself: a missing one may be a sync folder that is not mounted.
+  if (learningFolderState(englishFolder(), 2) ==
+      LearningFolderState::kUnavailable) {
+    return false;
+  }
   std::error_code ec;
   fs::create_directories(englishFolder(), ec);
+  if (ec) {
+    return false;
+  }
   if (!writeFileAtomically(ownFilePath(), content)) {
     return false;
   }
@@ -465,11 +474,21 @@ bool EnglishWordStore::loadLocalFileIfNeeded() {
     return false;
   }
   const fs::path folder = englishFolder();
-  std::error_code ec;
-  if (!fs::is_directory(folder, ec)) {
-    // The folder may not have been synced yet.
-    return false;
+  // learning/english/ and learning/ may both be missing.
+  switch (learningFolderState(folder, 2)) {
+    case LearningFolderState::kUnavailable:
+      // The user data folder may not have been synced yet.
+      return false;
+    case LearningFolderState::kCreatable:
+      // No english folder yet, so no own file: start empty. Saving creates
+      // the folder.
+      localFilePending_ = false;
+      return true;
+    case LearningFolderState::kExists:
+      break;
   }
+
+  std::error_code ec;
 
   const fs::path path = ownFilePath();
   if (!fs::exists(fs::symlink_status(path, ec))) {

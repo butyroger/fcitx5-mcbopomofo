@@ -111,4 +111,30 @@ TEST_F(LearningPathsFolderTest, RenamedOwnFileTakesFirstInSortedOrder) {
   EXPECT_EQ(found->filename(), "AAAA0001-a.txt");
 }
 
+TEST_F(LearningPathsFolderTest, LearningFolderState) {
+  const fs::path learning = folder_ / "learning";
+  const fs::path english = learning / "english";
+  EXPECT_EQ(learningFolderState(folder_, 1), LearningFolderState::kExists);
+  EXPECT_EQ(learningFolderState(learning, 1), LearningFolderState::kCreatable);
+  EXPECT_EQ(learningFolderState(english, 1),
+            LearningFolderState::kUnavailable);
+  EXPECT_EQ(learningFolderState(english, 2), LearningFolderState::kCreatable);
+  EXPECT_EQ(learningFolderState(folder_ / "data" / "learning", 1),
+            LearningFolderState::kUnavailable);
+  EXPECT_EQ(learningFolderState(folder_ / "data" / "learning" / "english", 2),
+            LearningFolderState::kUnavailable);
+
+  fs::create_directories(learning);
+  EXPECT_EQ(learningFolderState(learning / "", 1),
+            LearningFolderState::kExists);
+  EXPECT_EQ(learningFolderState(english, 1), LearningFolderState::kCreatable);
+
+  // A file in the way of the folder or of a missing parent.
+  touch("learning/english");
+  EXPECT_EQ(learningFolderState(english, 2),
+            LearningFolderState::kUnavailable);
+  EXPECT_EQ(learningFolderState(english / "more", 2),
+            LearningFolderState::kUnavailable);
+}
+
 }  // namespace McBopomofo::SmartLearning

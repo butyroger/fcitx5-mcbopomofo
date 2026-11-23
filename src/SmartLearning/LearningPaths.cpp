@@ -110,4 +110,25 @@ std::optional<fs::path> findRenamedOwnFile(const fs::path& folder,
   return std::nullopt;
 }
 
+LearningFolderState learningFolderState(const fs::path& folder,
+                                        int missingLevels) {
+  fs::path current = folder.lexically_normal();
+  if (current.filename().empty() && current.has_parent_path()) {
+    current = current.parent_path();
+  }
+  for (int missing = 0;; ++missing) {
+    std::error_code ec;
+    const fs::file_type type = fs::status(current, ec).type();
+    if (type == fs::file_type::directory) {
+      return missing == 0 ? LearningFolderState::kExists
+                          : LearningFolderState::kCreatable;
+    }
+    if (type != fs::file_type::not_found || missing >= missingLevels ||
+        !current.has_parent_path() || current.parent_path() == current) {
+      return LearningFolderState::kUnavailable;
+    }
+    current = current.parent_path();
+  }
+}
+
 }  // namespace McBopomofo::SmartLearning
