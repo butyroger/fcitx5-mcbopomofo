@@ -57,6 +57,11 @@ std::string CandidateDisplayText(const std::string& value,
                                  const std::string& reading,
                                  size_t candidatesWithTheValue);
 
+// The index of the typed character among the selection keys, ignoring case,
+// so that Shift or Caps Lock with a letter key still picks, or nullopt.
+std::optional<size_t> SelectionKeyIndexIgnoringCase(std::string_view keys,
+                                                    char typed);
+
 struct SymbolSection {
   std::string title;
   size_t count = 0;

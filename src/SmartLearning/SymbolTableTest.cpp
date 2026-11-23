@@ -59,6 +59,16 @@ TEST(SymbolTableTest, DuplicatedSymbolShowsNoReading) {
   EXPECT_EQ(CandidateDisplayText("中", "ㄓㄨㄥ-ㄓㄨㄥ", 2), "中 (ㄓㄨㄥ ㄓㄨㄥ)");
 }
 
+TEST(SymbolTableTest, SelectionKeysIgnoreCase) {
+  EXPECT_EQ(SelectionKeyIndexIgnoringCase("asdfghjkl", 'd'), 2u);
+  EXPECT_EQ(SelectionKeyIndexIgnoringCase("asdfghjkl", 'D'), 2u);
+  EXPECT_EQ(SelectionKeyIndexIgnoringCase("123456789", '3'), 2u);
+  // Shift and a digit is another character.
+  EXPECT_EQ(SelectionKeyIndexIgnoringCase("123456789", '#'), std::nullopt);
+  EXPECT_EQ(SelectionKeyIndexIgnoringCase("asdfghjkl", 'q'), std::nullopt);
+  EXPECT_EQ(SelectionKeyIndexIgnoringCase("asdfghjkl", 0), std::nullopt);
+}
+
 class SymbolTableFileTest : public ::testing::Test {
  protected:
   void SetUp() override {

@@ -1396,6 +1396,13 @@ TEST_F(KeyHandlerSmartTest, TemplatesAreListedAndFiltered) {
   EXPECT_FALSE(keyHandler_->handleTextTemplateInput(
       Key::asciiKey(Key::SPACE), textTemplate,
       [this](std::unique_ptr<InputState> s) { take(std::move(s)); }, [] {}));
+  // So does Enter, with Shift or not, which commits the highlighted one.
+  EXPECT_FALSE(keyHandler_->handleTextTemplateInput(
+      Key::asciiKey(Key::RETURN), textTemplate,
+      [this](std::unique_ptr<InputState> s) { take(std::move(s)); }, [] {}));
+  EXPECT_FALSE(keyHandler_->handleTextTemplateInput(
+      Key::asciiKey(Key::RETURN, /*shiftPressed=*/true), textTemplate,
+      [this](std::unique_ptr<InputState> s) { take(std::move(s)); }, [] {}));
   // So does Tab.
   EXPECT_FALSE(keyHandler_->handleTextTemplateInput(
       Key::asciiKey(Key::TAB), textTemplate,

@@ -1,6 +1,7 @@
 #include "SymbolTable.h"
 
 #include <algorithm>
+#include <cctype>
 #include <utility>
 
 namespace McBopomofo::SmartLearning {
@@ -160,6 +161,22 @@ std::string CandidateDisplayText(const std::string& value,
   std::string shownReading = reading;
   std::replace(shownReading.begin(), shownReading.end(), '-', ' ');
   return value + " (" + shownReading + ")";
+}
+
+std::optional<size_t> SelectionKeyIndexIgnoringCase(std::string_view keys,
+                                                    char typed) {
+  auto lower = [](char c) {
+    return static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  };
+  if (typed == 0) {
+    return std::nullopt;
+  }
+  for (size_t i = 0; i < keys.size(); ++i) {
+    if (lower(keys[i]) == lower(typed)) {
+      return i;
+    }
+  }
+  return std::nullopt;
 }
 
 SymbolGrid::SymbolGrid(const std::vector<SymbolSection>& sections,

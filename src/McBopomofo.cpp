@@ -366,6 +366,8 @@ class McBopomofoSymbolRowWord : public fcitx::CandidateWord {
       : fcitx::CandidateWord(std::move(displayText)),
         onSelect_(std::move(onSelect)) {}
   void select(fcitx::InputContext* context) const override {
+    // Showing the symbol table again replaces the candidate list, which
+    // destroys this word and |onSelect_|: nothing may follow this call.
     onSelect_(context);
   }
 
@@ -1710,6 +1712,12 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
     // is pressed.
     returnPressed =
         key.check(FcitxKey_Return, fcitx::KeyStates(fcitx::KeyState::Shift));
+  } else if (textTemplate != nullptr) {
+    // A text template is committed with Enter, with Shift or not.
+    returnPressed =
+        key.check(FcitxKey_Return) || key.check(FcitxKey_KP_Enter) ||
+        key.check(FcitxKey_Return, fcitx::KeyStates(fcitx::KeyState::Shift)) ||
+        key.check(FcitxKey_KP_Enter, fcitx::KeyStates(fcitx::KeyState::Shift));
   } else {
     // Otherwise, we just check if the return key is pressed.
     returnPressed = key.check(FcitxKey_Return);
@@ -2028,6 +2036,23 @@ bool McBopomofoEngine::handleSymbolTableKeyEvent(
   if (idx == -1) {
     idx = key.keyListIndex(numpadSelectionKeys_);
   }
+  // A letter key matches ignoring case, such as Shift+D for "d".
+  if (idx == -1 &&
+      !(key.states() & fcitx::KeyStates{fcitx::KeyState::Ctrl,
+                                        fcitx::KeyState::Alt,
+                                        fcitx::KeyState::Super})) {
+    auto sym = key.sym();
+    char letter = 0;
+    if (sym >= FcitxKey_A && sym <= FcitxKey_Z) {
+      letter = static_cast<char>('a' + (sym - FcitxKey_A));
+    } else if (sym >= FcitxKey_a && sym <= FcitxKey_z) {
+      letter = static_cast<char>('a' + (sym - FcitxKey_a));
+    }
+    if (auto index = SmartLearning::SelectionKeyIndexIgnoringCase(
+            selectionKeyCharacters(), letter)) {
+      idx = static_cast<int>(*index);
+    }
+  }
   if (idx != -1) {
     if (grid.isChoosingRow()) {
       showOrBeep(grid.chooseRow(static_cast<size_t>(idx)));
@@ -2174,6 +2199,8 @@ void McBopomofoEngine::showSymbolTable(fcitx::InputContext* context) {
       }
       candidateList->append(std::make_unique<McBopomofoSymbolRowWord>(
           std::move(text), [this, r](fcitx::InputContext* ic) {
+            // showSymbolTable() destroys this row and this function; nothing
+            // may follow it.
             if (symbolGrid_ != nullptr && symbolGrid_->chooseRowAt(r)) {
               showSymbolTable(ic);
             }
