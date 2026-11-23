@@ -9,6 +9,8 @@ add_library(SmartLearningLib
         AtomicFile.cpp
         BopomofoKeys.h
         BopomofoKeys.cpp
+        CandidateAdjustment.h
+        CandidateAdjustment.cpp
         EnglishWords.h
         EnglishWords.cpp
         LearnPhrase.h
@@ -38,6 +40,7 @@ if (ENABLE_TEST)
         add_executable(SmartLearningLibTest
                 AtomicFileTest.cpp
                 BopomofoKeysTest.cpp
+                CandidateAdjustmentTest.cpp
                 EnglishWordsTest.cpp
                 LearnPhraseTest.cpp
                 LearningPathsTest.cpp

@@ -132,6 +132,11 @@ class KeyHandler {
 
   void excludePhrase(const std::string& reading, const std::string& value);
 
+  // Makes the grid take the user phrases again from the language model and
+  // walks it, so that the composition shows the new order of the candidates.
+  // The candidates the user picked stay, but those of |adjustedReading|.
+  void refreshGridFromLanguageModel(const std::string& adjustedReading);
+
   void reset();
 
 #pragma region Dictionary Services

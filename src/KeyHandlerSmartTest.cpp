@@ -189,6 +189,9 @@ class KeyHandlerSmartTest : public ::testing::Test {
         });
   }
 
+  // Raising and excluding write the files and read them again.
+  void useFileBackedPhrases();
+
   std::string firstValueOf(const std::string& reading) {
     auto unigrams = lm_->getUnigrams(reading);
     return unigrams.empty() ? "" : unigrams[0].value();
@@ -274,6 +277,7 @@ class KeyHandlerSmartTest : public ::testing::Test {
   int learnerCalls_ = 0;
   int dataWrites_ = 0;
   int phraseLearnedCalls_ = 0;
+  int addHookCalls_ = 0;
   std::unique_ptr<InputState> state_ = std::make_unique<InputStates::Empty>();
   std::string committed_;
 };
@@ -783,6 +787,108 @@ TEST_F(KeyHandlerSmartTest, UppercaseLetterCommitDoesNotLearnPhrases) {
   EXPECT_EQ(committed_, "妳好A");
   EXPECT_EQ(learnerCalls_, 0);
   EXPECT_TRUE(temporaryStore_->contains("妳好", kNiHaoReading));
+}
+
+// MARK: - Raising and excluding candidates
+
+namespace {
+
+// Writes the user phrase files as the engine does and loads them again.
+class FileUserPhraseAdder : public UserPhraseAdder {
+ public:
+  FileUserPhraseAdder(std::shared_ptr<McBopomofoLM> lm,
+                      std::filesystem::path data,
+                      std::filesystem::path exclude)
+      : lm_(std::move(lm)), data_(std::move(data)), exclude_(std::move(exclude)) {}
+  void addUserPhrase(const std::string_view& reading,
+                     const std::string_view& phrase) override {
+    SmartLearning::UserPhraseFile::write(data_, exclude_, std::string(phrase),
+                                         std::string(reading));
+    lm_->loadUserPhrases(data_.c_str(), exclude_.c_str());
+  }
+  void removeUserPhrase(const std::string_view& reading,
+                        const std::string_view& phrase) override {
+    SmartLearning::UserPhraseFile::remove(data_, exclude_, std::string(phrase),
+                                          std::string(reading));
+    lm_->loadUserPhrases(data_.c_str(), exclude_.c_str());
+  }
+
+ private:
+  std::shared_ptr<McBopomofoLM> lm_;
+  std::filesystem::path data_;
+  std::filesystem::path exclude_;
+};
+
+}  // namespace
+
+void KeyHandlerSmartTest::useFileBackedPhrases() {
+  keyHandler_ = std::make_unique<KeyHandler>(
+      lm_, nullptr, std::make_shared<FileUserPhraseAdder>(lm_, data_, exclude_),
+      std::make_unique<PlainLocalizedStrings>(), overrideStore_);
+  keyHandler_->setOnAddNewPhrase([this](const std::string&) { ++addHookCalls_; });
+  useLayout(BopomofoKeyboardLayout::StandardLayout());
+}
+
+TEST_F(KeyHandlerSmartTest, BoostingPhraseShowsInCompositionAtOnce) {
+  useFileBackedPhrases();
+  type(kNiHaoKeys);
+  ASSERT_EQ(composingBuffer(), "你好");
+  keyHandler_->boostPhrase(kNiHaoReading, "妳好");
+  EXPECT_EQ(composingBuffer(), "你好");  // the state is rebuilt by the caller
+  take(keyHandler_->buildInputtingState());
+  EXPECT_EQ(composingBuffer(), "妳好");
+  EXPECT_EQ(addHookCalls_, 1);
+}
+
+TEST_F(KeyHandlerSmartTest, ExcludingPhraseShowsInCompositionAtOnce) {
+  useFileBackedPhrases();
+  type(kNiHaoKeys);
+  ASSERT_EQ(composingBuffer(), "你好");
+  keyHandler_->boostPhrase(kNiHaoReading, "妳好");
+  take(keyHandler_->buildInputtingState());
+  ASSERT_EQ(composingBuffer(), "妳好");
+  // Excluding the phrase that is now first brings the other one back.
+  keyHandler_->excludePhrase(kNiHaoReading, "妳好");
+  take(keyHandler_->buildInputtingState());
+  EXPECT_EQ(composingBuffer(), "你好");
+  EXPECT_EQ(addHookCalls_, 2);
+}
+
+TEST_F(KeyHandlerSmartTest, BoostingSingleCharacterShowsInComposition) {
+  useFileBackedPhrases();
+  type("su3");
+  ASSERT_EQ(composingBuffer(), "你");
+  keyHandler_->boostPhrase("ㄋㄧˇ", "妳");
+  take(keyHandler_->buildInputtingState());
+  EXPECT_EQ(composingBuffer(), "妳");
+  EXPECT_NE(readFile(data_).find("妳 ㄋㄧˇ"), std::string::npos);
+
+  keyHandler_->excludePhrase("ㄋㄧˇ", "妳");
+  take(keyHandler_->buildInputtingState());
+  EXPECT_EQ(composingBuffer(), "你");
+  EXPECT_NE(readFile(exclude_).find("妳 ㄋㄧˇ"), std::string::npos);
+}
+
+TEST_F(KeyHandlerSmartTest, AdjustingKeepsCursorAndOtherPickedCandidates) {
+  useFileBackedPhrases();
+  type(std::string(kNiHaoKeys) + "su3");
+  ASSERT_EQ(composingBuffer(), "你好你");
+  // Pick 妳 for the last syllable.
+  press(Key::asciiKey(Key::SPACE));
+  auto* choosing = dynamic_cast<InputStates::ChoosingCandidate*>(state_.get());
+  ASSERT_NE(choosing, nullptr);
+  keyHandler_->candidateSelected(
+      InputStates::ChoosingCandidate::Candidate("ㄋㄧˇ", "妳", "妳"),
+      choosing->originalCursor,
+      [this](std::unique_ptr<InputState> s) { take(std::move(s)); });
+  ASSERT_EQ(composingBuffer(), "你好妳");
+
+  keyHandler_->boostPhrase(kNiHaoReading, "妳好");
+  take(keyHandler_->buildInputtingState());
+  EXPECT_EQ(composingBuffer(), "妳好妳");
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+  ASSERT_NE(inputting, nullptr);
+  EXPECT_EQ(keyHandler_->candidateCursorIndex(), 3u);
 }
 
 }  // namespace McBopomofo

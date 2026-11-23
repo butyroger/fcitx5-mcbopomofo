@@ -364,6 +364,13 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
       const McBopomofo::KeyHandler::StateCallback& stateCallback,
       const McBopomofo::KeyHandler::ErrorCallback& errorCallback);
 
+  // Leaves a menu opened from the candidate list: shows |choosing| again with
+  // the candidate at |selectedIndex| highlighted.
+  void returnToCandidateList(
+      fcitx::InputContext* context,
+      const McBopomofo::KeyHandler::StateCallback& stateCallback,
+      const InputStates::ChoosingCandidate& choosing, size_t selectedIndex);
+
   // Handles state transitions.
   void enterNewState(fcitx::InputContext* context,
                      std::unique_ptr<InputState> newState);

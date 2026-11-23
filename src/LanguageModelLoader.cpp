@@ -179,7 +179,9 @@ void LanguageModelLoader::addUserPhrase(const std::string_view& reading,
   }
   FCITX_MCBOPOMOFO_INFO() << "Added user phrase: " << phrase
                           << ", reading: " << reading;
-  reloadUserModelsIfNeeded();
+  // Read at once, whatever the time stamps say, so that the new order shows
+  // in the very next lookup.
+  reloadUserPhrases();
 }
 
 void LanguageModelLoader::removeUserPhrase(const std::string_view& reading,
@@ -199,7 +201,9 @@ void LanguageModelLoader::removeUserPhrase(const std::string_view& reading,
   }
   FCITX_MCBOPOMOFO_INFO() << "Excluded phrase: " << phrase
                           << ", reading: " << reading;
-  reloadUserModelsIfNeeded();
+  // Read at once, whatever the time stamps say, so that the new order shows
+  // in the very next lookup.
+  reloadUserPhrases();
 }
 
 bool LanguageModelLoader::reloadUserModelsIfNeeded() {

@@ -361,6 +361,10 @@ struct CustomMenu : NotEmpty {
 
   std::unique_ptr<NotEmpty> previousState;
   std::vector<MenuEntry> entries;
+  // The highlighted candidate of the candidate list the menu was opened from,
+  // as an index into all the candidates; the highlight goes back there when
+  // the menu is left.
+  size_t selectedCandidateIndex = 0;
 };
 
 // A sequence of states to be processed in order. This allows a single key

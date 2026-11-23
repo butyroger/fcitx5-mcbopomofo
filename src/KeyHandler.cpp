@@ -876,13 +876,50 @@ bool KeyHandler::handleCandidateKeyForTraditionalBopomofoIfRequired(
 void KeyHandler::boostPhrase(const std::string& reading,
                              const std::string& value) {
   userPhraseAdder_->addUserPhrase(reading, value);
+  refreshGridFromLanguageModel(reading);
   onAddNewPhrase_(value);
 }
 
 void KeyHandler::excludePhrase(const std::string& reading,
                                const std::string& value) {
   userPhraseAdder_->removeUserPhrase(reading, value);
+  refreshGridFromLanguageModel(reading);
   onAddNewPhrase_(value);
+}
+
+void KeyHandler::refreshGridFromLanguageModel(
+    const std::string& adjustedReading) {
+  // The nodes of the grid keep the unigrams they were made with, so they are
+  // made again from the language model, which now has the new order. The
+  // candidates the user picked are kept, except those of the reading just
+  // adjusted: the user asked to change their order.
+  struct Pinned {
+    size_t location;
+    std::string reading;
+    std::string value;
+  };
+  std::vector<Pinned> pinned;
+  size_t location = 0;
+  for (const auto& node : latestWalk_.nodes) {
+    if (node->isOverridden() && node->reading() != adjustedReading) {
+      pinned.push_back({location, node->reading(), node->value()});
+    }
+    location += node->spanningLength();
+  }
+
+  std::vector<std::string> readings = grid_.readings();
+  size_t cursor = grid_.cursor();
+  grid_.clear();
+  for (const auto& reading : readings) {
+    grid_.insertReading(reading);
+  }
+  grid_.setCursor(std::min(cursor, grid_.length()));
+  for (const auto& p : pinned) {
+    grid_.overrideCandidate(
+        p.location,
+        Formosa::Gramambular2::ReadingGrid::Candidate(p.reading, p.value, ""));
+  }
+  walk();
 }
 
 void KeyHandler::reset() {

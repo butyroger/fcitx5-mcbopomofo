@@ -44,6 +44,7 @@
 #include <utility>
 #include <vector>
 
+#include "CandidateAdjustment.h"
 #include "Format.h"
 #include "Key.h"
 #include "LearningPaths.h"
@@ -1261,6 +1262,25 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
   }
 }
 
+void McBopomofoEngine::returnToCandidateList(
+    fcitx::InputContext* context,
+    const McBopomofo::KeyHandler::StateCallback& stateCallback,
+    const InputStates::ChoosingCandidate& choosing, size_t selectedIndex) {
+  // Entering the new state may destroy the menu state that |choosing| and
+  // |stateCallback| belong to, so nothing of them is used afterwards.
+  size_t candidateCount = choosing.candidates.size();
+  stateCallback(std::make_unique<InputStates::ChoosingCandidate>(choosing));
+  auto* list = dynamic_cast<fcitx::CommonCandidateList*>(
+      context->inputPanel().candidateList().get());
+  if (list == nullptr || selectedIndex >= candidateCount) {
+    return;
+  }
+  // Make sure fcitx5 shows the page of the candidate; needed when page > 0.
+  list->setPage(static_cast<int>(SmartLearning::PageOfCandidateIndex(
+      selectedIndex, static_cast<size_t>(list->pageSize()))));
+  list->setGlobalCursorIndex(static_cast<int>(selectedIndex));
+}
+
 bool McBopomofoEngine::handleCandidateKeyEvent(
     fcitx::InputContext* context, fcitx::Key key, fcitx::Key origKey,
     fcitx::CommonCandidateList* candidateList,
@@ -1412,10 +1432,7 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
     if (choosingCandidate != nullptr && choosingPunctuationList == nullptr) {
       // Enter selecting dictionary service state.
       if (keyHandler_->hasDictionaryServices()) {
-        int page = candidateList->currentPage();
-        int pageSize = candidateList->size();
-        int selectedCandidateIndex =
-            (page * pageSize) + candidateList->cursorIndex();
+        size_t selectedCandidateIndex = candidateList->globalCursorIndex();
         std::string reading =
             choosingCandidate->candidates[selectedCandidateIndex].reading;
 
@@ -1450,30 +1467,24 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
     bool isPlusKey = key.check(FcitxKey_plus) || key.check(FcitxKey_equal);
     bool isMinusKey =
         key.check(FcitxKey_minus) || key.check(FcitxKey_underscore);
-    if (choosingCandidate != nullptr && choosingPunctuationList == nullptr &&
-        (isPlusKey || isMinusKey)) {
-      int page = candidateList->currentPage();
-      int pageSize = candidateList->size();
-      int index = candidateList->cursorIndex();
-      int selectedCandidateIndex = (page * pageSize) + index;
+    if (choosingCandidate != nullptr && (isPlusKey || isMinusKey)) {
+      size_t selectedCandidateIndex = candidateList->globalCursorIndex();
+      if (selectedCandidateIndex >= choosingCandidate->candidates.size()) {
+        errorCallback();
+        return true;
+      }
       auto candidate = choosingCandidate->candidates[selectedCandidateIndex];
       std::string reading = candidate.reading;
-      // If the reading has an invalid prefix, skip dictionary lookup
-      if (std::any_of(invalidPrefixes.begin(), invalidPrefixes.end(),
-                      [&reading](const std::string& prefix) {
-                        return reading.compare(0, prefix.length(), prefix) == 0;
-                      })) {
-        return true;
-      }
-
-      // If the reading doesn't contain a hyphen, return true
-      if (reading.find('-') == std::string::npos) {
-        return true;
-      }
       std::string phrase = candidate.value;
-      std::string rawValue = candidate.rawValue;
-      if (phrase != rawValue) {
-        return true;
+      switch (SmartLearning::CheckCandidateAdjustable(reading, phrase,
+                                                      candidate.rawValue)) {
+        case SmartLearning::AdjustCheck::kIgnoreSilently:
+          return true;
+        case SmartLearning::AdjustCheck::kRejectWithError:
+          errorCallback();
+          return true;
+        case SmartLearning::AdjustCheck::kAllowed:
+          break;
       }
 
       std::vector<InputStates::CustomMenu::MenuEntry> entries;
@@ -1490,7 +1501,7 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
             FmtRuntime(
                 _("Do you want to boost the score of the phrase \"{}\"?")),
             phrase);
-      } else if (isMinusKey) {
+      } else {
         InputStates::CustomMenu::MenuEntry confirmEntry(
             _("Exclude"), [this, phrase, reading, stateCallback]() {
               keyHandler_->excludePhrase(reading, phrase);
@@ -1499,22 +1510,26 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
             });
         entries.emplace_back(std::move(confirmEntry));
         title = fmt::format(
-            FmtRuntime(_("Do you want to exclude the phrase \"{}\"?")), phrase);
+            FmtRuntime(_("Do you want to exclude the phrase \"{}\"?")),
+            phrase);
       }
 
+      // Cancelling goes back to the candidate list, with the same candidate
+      // highlighted.
+      std::shared_ptr<InputStates::ChoosingCandidate> previous =
+          std::make_shared<InputStates::ChoosingCandidate>(*choosingCandidate);
       InputStates::CustomMenu::MenuEntry cancelEntry(
-          _("Cancel"), [this, stateCallback]() {
-            auto inputting = keyHandler_->buildInputtingState();
-            auto choosing = keyHandler_->buildChoosingCandidateState(
-                inputting.get(), keyHandler_->candidateCursorIndex());
-            stateCallback(std::move(inputting));
-            stateCallback(std::move(choosing));
+          _("Cancel"), [this, context, stateCallback, previous,
+                        selectedCandidateIndex]() {
+            returnToCandidateList(context, stateCallback, *previous,
+                                  selectedCandidateIndex);
           });
       entries.push_back(std::move(cancelEntry));
       auto copy =
           std::make_unique<InputStates::ChoosingCandidate>(*choosingCandidate);
       auto confirm = std::make_unique<InputStates::CustomMenu>(
           std::move(copy), std::move(title), std::move(entries));
+      confirm->selectedCandidateIndex = selectedCandidateIndex;
       stateCallback(std::move(confirm));
       return true;
     }
@@ -1583,9 +1598,8 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
       auto* choosingCandidate = dynamic_cast<InputStates::ChoosingCandidate*>(
           customMenu->previousState.get());
       if (choosingCandidate != nullptr) {
-        auto copy = std::make_unique<InputStates::ChoosingCandidate>(
-            *choosingCandidate);
-        stateCallback(std::move(copy));
+        returnToCandidateList(context, stateCallback, *choosingCandidate,
+                              customMenu->selectedCandidateIndex);
       }
       return true;
     }
