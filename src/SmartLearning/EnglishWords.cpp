@@ -16,8 +16,6 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr char kEnglishFolderName[] = "english";
-constexpr char kRemovedFilename[] = "removed.txt";
-constexpr std::string_view kRemovedEnglishKind = "english";
 
 // Well-known words with uppercase letters after the first one, whose case is
 // fixed even if they have never been typed.
@@ -149,22 +147,6 @@ std::optional<long long> parseInteger(std::string_view s) {
   return value;
 }
 
-// A decimal number, with nothing else.
-std::optional<double> parseNumber(std::string_view s) {
-  if (!s.empty() && s.front() == '+') {
-    s.remove_prefix(1);
-    if (!s.empty() && s.front() == '-') {
-      return std::nullopt;
-    }
-  }
-  double value = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
-  if (s.empty() || ec != std::errc() || ptr != s.data() + s.size()) {
-    return std::nullopt;
-  }
-  return value;
-}
-
 // Each line of a file is a word, a tab, and the count.
 std::map<std::string, long long> parseCounts(std::string_view content) {
   std::map<std::string, long long> result;
@@ -175,30 +157,6 @@ std::map<std::string, long long> parseCounts(std::string_view content) {
     }
     if (auto count = parseInteger(parts[1])) {
       result[std::string(parts[0])] = *count;
-    }
-  }
-  return result;
-}
-
-// The English words in the removed file: each line is the kind, the key and
-// the time it was removed. A time of 0 means the entry is not removed.
-std::set<std::string> removedEnglishWords(const fs::path& path) {
-  std::map<std::string, double> times;
-  if (auto content = readWholeFile(path)) {
-    for (std::string_view line : split(*content, '\n', /*keepEmpty=*/false)) {
-      auto parts = split(line, '\t', /*keepEmpty=*/true);
-      if (parts.size() != 3 || parts[0] != kRemovedEnglishKind) {
-        continue;
-      }
-      if (auto time = parseNumber(parts[2])) {
-        times[std::string(parts[1])] = *time;
-      }
-    }
-  }
-  std::set<std::string> result;
-  for (const auto& [word, time] : times) {
-    if (time != 0) {
-      result.insert(word);
     }
   }
   return result;
@@ -311,11 +269,15 @@ std::vector<std::string> EnglishLexicon::wordsWithPrefix(
 
 EnglishWordStore::EnglishWordStore(
     std::string deviceID, std::string deviceName,
-    std::shared_ptr<const EnglishLexicon> lexicon, std::function<double()> now)
+    std::shared_ptr<const EnglishLexicon> lexicon, std::function<double()> now,
+    std::shared_ptr<RemovedEntries> removedEntries)
     : deviceID_(std::move(deviceID)),
       ownFilename_(learningFilename(deviceID_, sanitizeDeviceName(deviceName))),
       lexicon_(lexicon ? std::move(lexicon) : emptyLexicon()),
-      now_(std::move(now)) {}
+      now_(std::move(now)),
+      removedEntries_(removedEntries ? std::move(removedEntries)
+                                     : std::make_shared<RemovedEntries>(now_)) {
+}
 
 void EnglishWordStore::setLearningFolder(fs::path learningFolder) {
   // A relative path would resolve against the process's working directory.
@@ -341,6 +303,7 @@ void EnglishWordStore::setLearningFolder(fs::path learningFolder) {
   learningFolder_ = std::move(learningFolder);
   hasFolder_ = true;
   localFilePending_ = true;
+  removedEntries_->setLearningFolder(learningFolder_);
   reload();
 }
 
@@ -555,10 +518,15 @@ void EnglishWordStore::reload() {
         }
       }
     }
-    // Words removed by the user, maybe on another device.
-    for (const auto& word :
-         removedEnglishWords(learningFolder_ / kRemovedFilename)) {
-      merged.erase(word);
+    // Words removed by the user, maybe on another device. A time of 0 means
+    // the entry is not removed.
+    for (auto it = merged.begin(); it != merged.end();) {
+      if (removedEntries_->removedTime(RemovedEntries::kEnglish, it->first) !=
+          0) {
+        it = merged.erase(it);
+      } else {
+        ++it;
+      }
     }
   }
   counts_ = std::move(merged);

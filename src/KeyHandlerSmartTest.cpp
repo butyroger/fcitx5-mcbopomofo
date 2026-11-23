@@ -35,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+#include "CommonSentences.h"
 #include "EnglishWords.h"
 #include "KeyHandler.h"
 #include "TemporaryPhrases.h"
@@ -76,6 +77,9 @@ class PlainLocalizedStrings : public KeyHandler::LocalizedStrings {
   std::string markingNotAvailableInFontAnnotationMode() override { return ""; }
   std::string pressEscAgainToClearAll() override {
     return "Press Esc again to clear all";
+  }
+  std::string tabToCompleteSentence(const std::string& rest) override {
+    return "Tab: " + rest;
   }
 };
 
@@ -132,6 +136,13 @@ class KeyHandlerSmartTest : public ::testing::Test {
     keyHandler_->setEscTrimsMistypedText(true);
     useLayout(BopomofoKeyboardLayout::StandardLayout());
     setUpPhraseLearning();
+
+    sentenceStore_ = std::make_shared<SmartLearning::CommonSentenceStore>(
+        "TESTDEV1", "test", [] { return 1700000000.0; });
+    sentenceStore_->setLearningFolder(folder_);
+    keyHandler_->setCommonSentenceStore(sentenceStore_);
+    keyHandler_->setOnCommonSentencesRecorded(
+        [this] { ++sentencesRecordedCalls_; });
   }
 
   // The temporary phrases go to the language model, and the phrases learned
@@ -318,6 +329,8 @@ class KeyHandlerSmartTest : public ::testing::Test {
   std::filesystem::path data_;
   std::filesystem::path exclude_;
   std::shared_ptr<SmartLearning::TemporaryPhraseStore> temporaryStore_;
+  std::shared_ptr<SmartLearning::CommonSentenceStore> sentenceStore_;
+  int sentencesRecordedCalls_ = 0;
   int learnerCalls_ = 0;
   int dataWrites_ = 0;
   int phraseLearnedCalls_ = 0;
@@ -1071,6 +1084,118 @@ TEST_F(KeyHandlerSmartTest, EqualsWithoutAnExpressionIsJustTyped) {
   restart();
   type("(2+3)==");
   EXPECT_EQ(composingBuffer(), "（2+3)＝5=");
+}
+
+// 你好, then 我們今天下午.
+const std::string kSentenceKeys = KeysForSyllables(
+    BopomofoKeyboardLayout::StandardLayout(),
+    {"ㄋㄧˇ", "ㄏㄠˇ", "ㄨㄛˇ", "ㄇㄣˊ", "ㄐㄧㄣ", "ㄊㄧㄢ", "ㄒㄧㄚˋ", "ㄨˇ"});
+
+// Types the keys and commits them, returning what was committed.
+#define COMMIT_SENTENCE(keys, out)        \
+  do {                                    \
+    restart();                            \
+    type(keys);                           \
+    press(Key::asciiKey(Key::RETURN));    \
+    (out) = committed_;                   \
+  } while (0)
+
+TEST_F(KeyHandlerSmartTest, SentenceCommittedThreeTimesIsCompletedWithTab) {
+  std::string sentence;
+  COMMIT_SENTENCE(kSentenceKeys, sentence);
+  ASSERT_GE(SmartLearning::SentenceLength(sentence), 6u) << sentence;
+  ASSERT_EQ(sentence.rfind("你好", 0), 0u) << sentence;
+  EXPECT_EQ(sentencesRecordedCalls_, 1);
+  // Recording only touches memory.
+  EXPECT_FALSE(std::filesystem::exists(folder_ / "sentences"));
+  std::string again;
+  COMMIT_SENTENCE(kSentenceKeys, again);
+  ASSERT_EQ(again, sentence);
+
+  // Twice is not enough.
+  restart();
+  type("su3cl3");
+  ASSERT_EQ(composingBuffer(), "你好");
+  EXPECT_EQ(tooltip(), "");
+
+  COMMIT_SENTENCE(kSentenceKeys, again);
+  ASSERT_EQ(again, sentence);
+  restart();
+  type("su3cl3");
+  const std::string rest = sentence.substr(std::string("你好").size());
+  EXPECT_EQ(tooltip(), "Tab: " + rest);
+
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(errors_, 0);
+  EXPECT_EQ(composingBuffer(), sentence);
+  EXPECT_EQ(tooltip(), "");
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, sentence);
+  EXPECT_EQ(sentenceStore_->entry(sentence)->count, 4);
+}
+
+TEST_F(KeyHandlerSmartTest, SentenceSuggestedOnlyAtTheEnd) {
+  std::string sentence;
+  for (int i = 0; i < 3; i++) {
+    COMMIT_SENTENCE(kSentenceKeys, sentence);
+  }
+  restart();
+  type("su3cl3");
+  ASSERT_NE(tooltip(), "");
+  press(Key::namedKey(Key::KeyName::LEFT));
+  EXPECT_EQ(tooltip(), "");
+  press(Key::asciiKey(Key::TAB));
+  EXPECT_EQ(composingBuffer().size(), std::string("你好").size());
+
+  // Nor while a reading is being typed.
+  restart();
+  type("su3cl3c");
+  EXPECT_EQ(tooltip(), "");
+}
+
+TEST_F(KeyHandlerSmartTest, SentenceAfterPunctuationInTheComposition) {
+  std::string sentence;
+  for (int i = 0; i < 3; i++) {
+    COMMIT_SENTENCE(kSentenceKeys, sentence);
+  }
+  restart();
+  type("cl3!su3cl3");
+  ASSERT_EQ(composingBuffer(), "好！你好");
+  EXPECT_EQ(tooltip(), "Tab: " + sentence.substr(std::string("你好").size()));
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(composingBuffer(), "好！" + sentence);
+}
+
+TEST_F(KeyHandlerSmartTest, TabTakesTheSentenceBeforeEnglishCompletions) {
+  for (int i = 0; i < 3; i++) {
+    sentenceStore_->record("apple pie 很好吃喔");
+  }
+  type("app");
+  ASSERT_TRUE(keyHandler_->isSmartEnglishMode());
+  EXPECT_EQ(tooltip(), "Tab: le pie 很好吃喔");
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(candidateValues(), std::vector<std::string>());
+  EXPECT_EQ(composingBuffer(), "apple pie 很好吃喔");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+
+  // Without a suggestion, Tab lists the English completions as before.
+  restart();
+  type("hel");
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_FALSE(candidateValues().empty());
+}
+
+TEST_F(KeyHandlerSmartTest, NoSentencesWhenTurnedOff) {
+  std::string sentence;
+  sentenceStore_->setEnabled(false);
+  for (int i = 0; i < 3; i++) {
+    COMMIT_SENTENCE(kSentenceKeys, sentence);
+  }
+  EXPECT_FALSE(sentenceStore_->entry(sentence).has_value());
+  EXPECT_EQ(sentencesRecordedCalls_, 0);
+  restart();
+  type("su3cl3");
+  EXPECT_EQ(tooltip(), "");
 }
 
 }  // namespace McBopomofo

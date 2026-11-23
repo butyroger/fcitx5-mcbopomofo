@@ -11,6 +11,8 @@
 #include <string_view>
 #include <vector>
 
+#include "RemovedEntries.h"
+
 namespace McBopomofo::SmartLearning {
 
 // A read-only list of English words, kept sorted and in lowercase, for
@@ -70,9 +72,12 @@ class EnglishWordStore {
   static constexpr double kReloadInterval = 60;  // seconds
   static constexpr size_t kMaximumCompletions = 20;
 
+  // Without |removedEntries|, the store reads "removed.txt" with its own
+  // reader, using |now|.
   EnglishWordStore(std::string deviceID, std::string deviceName,
                    std::shared_ptr<const EnglishLexicon> lexicon,
-                   std::function<double()> now);
+                   std::function<double()> now,
+                   std::shared_ptr<RemovedEntries> removedEntries = nullptr);
 
   // Uses "<learningFolder>/english" and "<learningFolder>/removed.txt". An
   // empty or relative path is ignored. Setting the current folder again only
@@ -130,6 +135,7 @@ class EnglishWordStore {
   std::string ownFilename_;
   std::shared_ptr<const EnglishLexicon> lexicon_;
   std::function<double()> now_;
+  std::shared_ptr<RemovedEntries> removedEntries_;
 
   std::filesystem::path learningFolder_;
   bool hasFolder_ = false;

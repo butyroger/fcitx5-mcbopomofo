@@ -52,6 +52,7 @@ TEST(McBopomofoConfigTest, DefaultsMatchTheMacSetup) {
   EXPECT_TRUE(c.chineseEnglishSwitchReminderEnabled.value());
   EXPECT_TRUE(c.showChineseEnglishModeIcon.value());
   EXPECT_FALSE(c.showFullHalfWidthModeIcon.value());
+  EXPECT_TRUE(c.commonSentencesEnabled.value());
 }
 
 TEST(McBopomofoConfigTest, LayoutForConfig) {

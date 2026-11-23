@@ -113,6 +113,10 @@ class MockLocalizedString : public KeyHandler::LocalizedStrings {
   std::string pressEscAgainToClearAll() override {
     return "Press Esc again to clear all";
   }
+
+  std::string tabToCompleteSentence(const std::string& rest) override {
+    return "Tab: " + rest;
+  }
 };
 
 class KeyHandlerTest : public ::testing::Test {

@@ -44,6 +44,8 @@
 #include "InputState.h"
 #include "KeyHandler.h"
 #include "LanguageModelLoader.h"
+#include "CommonSentences.h"
+#include "RemovedEntries.h"
 #include "TemporaryPhrases.h"
 #include "UserOverrideStore.h"
 #include "PathCompat.h"
@@ -217,6 +219,12 @@ FCITX_CONFIGURATION(
     fcitx::Option<bool> fixEnglishWordCase{
         this, "FixEnglishWordCase",
         _("Fix the case of words like iPhone upon a space"), true};
+
+    // Remember the sentences committed often, suggest the rest of one after
+    // its beginning is typed, and take it with Tab.
+    fcitx::Option<bool> commonSentencesEnabled{
+        this, "CommonSentencesEnabled",
+        _("Remember sentences typed often, and complete them with Tab"), true};
 
     // Show a reminder ("ABC" or "中文") when Caps Lock switches the mode.
     fcitx::Option<bool> chineseEnglishSwitchReminderEnabled{
@@ -448,7 +456,10 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::vector<McBopomofoLM::UserFileIssue> userFileIssues_;
   std::shared_ptr<SmartLearning::UserOverrideStore> userOverrideStore_;
   std::shared_ptr<SmartLearning::EnglishWordStore> englishWordStore_;
+  // The entries removed by the user, shared by the stores below.
+  std::shared_ptr<SmartLearning::RemovedEntries> removedEntries_;
   std::shared_ptr<SmartLearning::TemporaryPhraseStore> temporaryPhraseStore_;
+  std::shared_ptr<SmartLearning::CommonSentenceStore> commonSentenceStore_;
   std::unique_ptr<fcitx::EventSourceTime> learningSaveTimer_;
   bool learningSaveRetried_ = false;
   // A choice has been learned since the learned choices were last saved.

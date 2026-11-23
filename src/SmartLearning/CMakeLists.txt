@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.12)
 project(SmartLearningLib)
 
+find_package(ICU COMPONENTS uc REQUIRED)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 
@@ -11,6 +13,8 @@ add_library(SmartLearningLib
         BopomofoKeys.cpp
         CandidateAdjustment.h
         CandidateAdjustment.cpp
+        CommonSentences.h
+        CommonSentences.cpp
         EnglishWords.h
         EnglishWords.cpp
         LearnPhrase.h
@@ -36,6 +40,7 @@ target_include_directories(SmartLearningLib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/../Engine
         ${CMAKE_CURRENT_SOURCE_DIR}/../ChineseNumbers)
 target_link_libraries(SmartLearningLib PUBLIC McBopomofoLMLib gramambular2_lib MandarinLib ChineseNumbersLib)
+target_link_libraries(SmartLearningLib PRIVATE ICU::uc)
 
 if (ENABLE_TEST)
         enable_testing()
@@ -44,6 +49,7 @@ if (ENABLE_TEST)
                 AtomicFileTest.cpp
                 BopomofoKeysTest.cpp
                 CandidateAdjustmentTest.cpp
+                CommonSentencesTest.cpp
                 EnglishWordsTest.cpp
                 LearnPhraseTest.cpp
                 LearningPathsTest.cpp

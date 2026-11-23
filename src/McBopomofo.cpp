@@ -408,6 +408,10 @@ class KeyHandlerLocalizedString : public KeyHandler::LocalizedStrings {
   std::string markingNotAvailableInFontAnnotationMode() override {
     return _("cannot add new phrases when Bopomofo annotation is on");
   }
+
+  std::string tabToCompleteSentence(const std::string& rest) override {
+    return fmt::format(FmtRuntime(_("Tab: {0}")), rest);
+  }
 };
 
 class LanguageModelLoaderLocalizedStrings
@@ -477,22 +481,30 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   }
   userOverrideStore_ = std::make_shared<SmartLearning::UserOverrideStore>(
       config_.deviceID.value(), hostName);
+  auto steadyNow = [] {
+    return std::chrono::duration<double>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  };
+  auto wallNow = [] {
+    return std::chrono::duration<double>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+  };
+  // One reader of removed.txt for all the stores.
+  removedEntries_ = std::make_shared<SmartLearning::RemovedEntries>(steadyNow);
   englishWordStore_ = std::make_shared<SmartLearning::EnglishWordStore>(
       config_.deviceID.value(), hostName,
       SmartLearning::EnglishLexicon::loadFromFile(
           SmartLearning::kDefaultEnglishWordList),
-      [] {
-        return std::chrono::duration<double>(
-                   std::chrono::steady_clock::now().time_since_epoch())
-            .count();
-      });
-  // Temporary phrases are compared across devices, by the wall clock.
+      steadyNow, removedEntries_);
+  // Temporary phrases and sentences are compared across devices, by the wall
+  // clock.
   temporaryPhraseStore_ = std::make_shared<SmartLearning::TemporaryPhraseStore>(
-      config_.deviceID.value(), hostName, [] {
-        return std::chrono::duration<double>(
-                   std::chrono::system_clock::now().time_since_epoch())
-            .count();
-      });
+      config_.deviceID.value(), hostName, wallNow, removedEntries_);
+  commonSentenceStore_ = std::make_shared<SmartLearning::CommonSentenceStore>(
+      config_.deviceID.value(), hostName, wallNow, removedEntries_);
+  commonSentenceStore_->setEnabled(config_.commonSentencesEnabled.value());
   // The completions listed with Tab for an English word.
   languageModelLoader_->getLM()->setEnglishCompletionProvider(
       [store = englishWordStore_](const std::string& word) {
@@ -522,6 +534,12 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   keyHandler_->setEnglishWordStore(englishWordStore_);
   keyHandler_->setOnEnglishWordsRecorded([this]() {
     if (englishWordStore_->hasUnsavedChanges()) {
+      scheduleLearningSave();
+    }
+  });
+  keyHandler_->setCommonSentenceStore(commonSentenceStore_);
+  keyHandler_->setOnCommonSentencesRecorded([this]() {
+    if (commonSentenceStore_->hasUnsavedChanges()) {
       scheduleLearningSave();
     }
   });
@@ -695,6 +713,9 @@ McBopomofoEngine::~McBopomofoEngine() {
   if (temporaryPhraseStore_ && temporaryPhraseStore_->hasUnsavedChanges()) {
     temporaryPhraseStore_->save();
   }
+  if (commonSentenceStore_ && commonSentenceStore_->hasUnsavedChanges()) {
+    commonSentenceStore_->save();
+  }
 }
 
 bool McBopomofoEngine::saveLearning() {
@@ -713,6 +734,10 @@ bool McBopomofoEngine::saveLearning() {
       !temporaryPhraseStore_->save()) {
     saved = false;
   }
+  if (commonSentenceStore_->hasUnsavedChanges() &&
+      !commonSentenceStore_->save()) {
+    saved = false;
+  }
   return saved;
 }
 
@@ -729,6 +754,9 @@ void McBopomofoEngine::applyLearningFolder() {
   if (temporaryPhraseStore_) {
     temporaryPhraseStore_->setLearningFolder(learningFolder);
     applyTemporaryPhrases();
+  }
+  if (commonSentenceStore_) {
+    commonSentenceStore_->setLearningFolder(learningFolder);
   }
 }
 
@@ -861,6 +889,9 @@ void McBopomofoEngine::reloadConfig() {
 }
 
 void McBopomofoEngine::applySmartOptions() {
+  if (commonSentenceStore_) {
+    commonSentenceStore_->setEnabled(config_.commonSentencesEnabled.value());
+  }
   if (!keyHandler_) {
     return;
   }
@@ -1049,6 +1080,8 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   // Also drops the temporary phrases in Plain Bopomofo.
   temporaryPhraseStore_->reloadIfChanged();
   applyTemporaryPhrases();
+  // The other devices' sentences, at most once a minute.
+  commonSentenceStore_->reloadIfNeeded();
 
   bool didReload = languageModelLoader_->reloadUserModelsIfNeeded();
   if (didReload) {

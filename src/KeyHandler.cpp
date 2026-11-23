@@ -163,8 +163,20 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
   const bool isTabWithComposition =
       isTab && (!reading_.isEmpty() || grid_.length() > 0);
 
-  // Any use of Tab that takes priority over the English completions below
-  // is checked here.
+  // Tab takes the rest of the common sentence suggested, before the English
+  // completions below.
+  if (isTabWithComposition && reading_.isEmpty() &&
+      dynamic_cast<InputStates::Inputting*>(state) != nullptr) {
+    // Refreshes the suggestion.
+    buildInputtingState();
+    if (!sentenceCompletion_.empty()) {
+      std::string completion = sentenceCompletion_;
+      setSmartEnglishMode(false);
+      insertLiteralText(completion);
+      stateCallback(buildInputtingState());
+      return true;
+    }
+  }
 
   if (smartSwitching && smartEnglishMode_) {
     if (!smartEnglishDigitsOnly_ &&
@@ -1843,8 +1855,21 @@ std::unique_ptr<InputStates::Inputting> KeyHandler::buildInputtingState() {
 
   std::string composingBuffer = head + reading + tail;
   size_t cursorIndex = head.length() + reading.length();
+  std::string tooltip = composedString.tooltip;
+
+  // Suggest the rest of a common sentence when typing at the end; the other
+  // tooltips come first.
+  sentenceCompletion_.clear();
+  if (commonSentenceStore_ != nullptr &&
+      inputMode_ == McBopomofo::InputMode::McBopomofo && tooltip.empty() &&
+      reading.empty() && tail.empty() && grid_.cursor() == grid_.length()) {
+    if (auto completion = commonSentenceStore_->completion(head)) {
+      sentenceCompletion_ = *completion;
+      tooltip = localizedStrings_->tabToCompleteSentence(*completion);
+    }
+  }
   return std::make_unique<InputStates::Inputting>(composingBuffer, cursorIndex,
-                                                  composedString.tooltip);
+                                                  tooltip);
 }
 
 std::unique_ptr<InputStates::ChoosingCandidate>
@@ -2370,6 +2395,7 @@ bool KeyHandler::convertTrailingEnglishToChinese(
 
 void KeyHandler::learnFromCommittedComposition() {
   learnEnglishWordsFromWalk();
+  recordCommonSentencesFromWalk();
   if (inputMode_ != McBopomofo::InputMode::McBopomofo ||
       temporaryPhraseStore_ == nullptr) {
     return;
@@ -2470,6 +2496,23 @@ void KeyHandler::learnEnglishWordsFromWalk() {
   englishWordStore_->record(words);
   if (onEnglishWordsRecorded_) {
     onEnglishWordsRecorded_();
+  }
+}
+
+void KeyHandler::recordCommonSentencesFromWalk() {
+  if (inputMode_ != McBopomofo::InputMode::McBopomofo ||
+      commonSentenceStore_ == nullptr) {
+    return;
+  }
+  // The text committed, without any Bopomofo annotation.
+  std::string committed;
+  for (const auto& node : latestWalk_.nodes) {
+    committed += node->value();
+  }
+  // Only memory is touched; the file is written later.
+  commonSentenceStore_->record(committed);
+  if (commonSentenceStore_->hasUnsavedChanges() && onCommonSentencesRecorded_) {
+    onCommonSentencesRecorded_();
   }
 }
 

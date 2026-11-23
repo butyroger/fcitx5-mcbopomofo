@@ -547,3 +547,11 @@ msgstr "注音－許氏鍵盤"
 #: src/McBopomofo.cpp
 msgid "Learned phrase \"{0}\""
 msgstr "已學會詞彙「{0}」"
+
+#: src/McBopomofo.h
+msgid "Remember sentences typed often, and complete them with Tab"
+msgstr "記住常打的句子，打出開頭按 Tab 接上"
+
+#: src/McBopomofo.cpp
+msgid "Tab: {0}"
+msgstr "Tab：{0}"

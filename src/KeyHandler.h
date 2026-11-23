@@ -42,6 +42,7 @@
 #include "Key.h"
 #include "LanguageModelLoader.h"
 #include "LearnPhrase.h"
+#include "CommonSentences.h"
 #include "TemporaryPhrases.h"
 #include "UserOverrideStore.h"
 
@@ -264,6 +265,20 @@ class KeyHandler {
     onPhraseLearned_ = std::move(callback);
   }
 
+  // The sentences typed often. The sentences committed are recorded in it,
+  // and the rest of one is suggested at the end of the composition, to be
+  // taken with Tab. Without the store, no sentence is recorded or suggested.
+  void setCommonSentenceStore(
+      std::shared_ptr<SmartLearning::CommonSentenceStore> store) {
+    commonSentenceStore_ = std::move(store);
+  }
+
+  // Invoked after sentences have been recorded, so that the owner can
+  // schedule saving them.
+  void setOnCommonSentencesRecorded(std::function<void()> callback) {
+    onCommonSentencesRecorded_ = std::move(callback);
+  }
+
   // Whether the letters typed are being put as English.
   [[nodiscard]] bool isSmartEnglishMode() const { return smartEnglishMode_; }
 
@@ -438,8 +453,11 @@ class KeyHandler {
                                       const StateCallback& stateCallback);
   // Records the English words in the composition about to be committed.
   void learnEnglishWordsFromWalk();
+  // Records the sentences in the composition about to be committed.
+  void recordCommonSentencesFromWalk();
   // Learns from the composition about to be committed: the temporary phrases
-  // typed again become user phrases, and the English words are recorded.
+  // typed again become user phrases, and the English words and the sentences
+  // are recorded.
   void learnFromCommittedComposition();
   // Learns the phrase of the candidate just picked at |cursor|, or the
   // characters that broke up the phrase there in |walkBefore|.
@@ -481,6 +499,11 @@ class KeyHandler {
   // The phrases that became temporary phrases in this composition; committing
   // them does not count as typing them again.
   std::set<SmartLearning::Phrase> phrasesPickedInComposition_;
+  std::shared_ptr<SmartLearning::CommonSentenceStore> commonSentenceStore_;
+  std::function<void()> onCommonSentencesRecorded_;
+  // The rest of a common sentence suggested by the last Inputting state
+  // built, taken with Tab.
+  std::string sentenceCompletion_;
   Formosa::Gramambular2::ReadingGrid::WalkResult latestWalk_;
   std::shared_ptr<DictionaryServices> dictionaryServices_;
 
@@ -544,6 +567,8 @@ class KeyHandler {
     virtual std::string markingNotAvailableInFontAnnotationMode() = 0;
     // Reference string: "Press Esc again to clear all"
     virtual std::string pressEscAgainToClearAll() = 0;
+    // Reference string: "Tab: {0}", with the rest of a common sentence.
+    virtual std::string tabToCompleteSentence(const std::string& rest) = 0;
   };
 };
 
