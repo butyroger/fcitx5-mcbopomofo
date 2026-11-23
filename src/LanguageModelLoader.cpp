@@ -34,6 +34,7 @@
 #include "Log.h"
 #include "PathCompat.h"
 #include "SmartLearning/AtomicFile.h"
+#include "SmartLearning/UserDataFolder.h"
 
 namespace McBopomofo {
 
@@ -133,7 +134,16 @@ void LanguageModelLoader::setUserDataFolder(std::filesystem::path folder) {
       TimestampedPath(userDataPath + "/" + kExcludedPhraseFilename);
   phrasesReplacementPath_ =
       TimestampedPath(userDataPath + "/" + kPhrasesReplacementFilename);
-  populateUserDataFilesIfNeeded();
+  // Templates only go into the default folder; a user-chosen folder may be
+  // synced from other computers, and its files are never created here. Files
+  // that are missing load as empty and are picked up once they appear.
+  if (SmartLearning::shouldCreateTemplateFiles(folder, defaultUserDataPath_)) {
+    populateUserDataFilesIfNeeded();
+  } else {
+    // Drop the phrases of the previous folder even if nothing exists here.
+    lm_->loadUserPhrases(userPhrasesPath_.path().c_str(),
+                         excludedPhrasesPath_.path().c_str());
+  }
   reloadUserModelsIfNeeded();
 }
 

@@ -21,6 +21,8 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
 
+#include <unistd.h>
+
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -125,6 +127,26 @@ TEST(TimestampedPathTest, BasicFunctionalities) {
 
   p2.checkTimestamp();
   ASSERT_FALSE(p2.timestampDifferentFromLastCheck());
+}
+
+// A file that is missing at first (not synced yet) must be noticed as changed
+// once it appears.
+TEST(TimestampedPathTest, AbsentThenPresent) {
+  std::filesystem::path dir = std::filesystem::temp_directory_path() /
+                              ("tsp-absent-" + std::to_string(::getpid()));
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  TimestampedPath p((dir / "data.txt").string());
+  p.checkTimestamp();
+  ASSERT_FALSE(p.pathExists());
+  ASSERT_FALSE(p.timestampDifferentFromLastCheck());
+
+  std::ofstream(dir / "data.txt") << "x";
+  ASSERT_TRUE(p.pathExists());
+  ASSERT_TRUE(p.timestampDifferentFromLastCheck());
+  p.checkTimestamp();
+  ASSERT_FALSE(p.timestampDifferentFromLastCheck());
+  std::filesystem::remove_all(dir);
 }
 
 }  // namespace McBopomofo

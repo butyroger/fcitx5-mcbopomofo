@@ -90,4 +90,11 @@ TEST_F(UserDataFolderTest, FallsBackOnRelativePath) {
   EXPECT_FALSE(w_.empty());
 }
 
+TEST_F(UserDataFolderTest, TemplatesOnlyInDefaultFolder) {
+  EXPECT_TRUE(shouldCreateTemplateFiles(def_, def_));
+  EXPECT_TRUE(shouldCreateTemplateFiles(def_ / "sub/..", def_));
+  EXPECT_FALSE(shouldCreateTemplateFiles(tmp_ / "Synced", def_));
+  EXPECT_FALSE(shouldCreateTemplateFiles("", def_));
+}
+
 }  // namespace McBopomofo::SmartLearning

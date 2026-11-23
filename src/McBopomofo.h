@@ -345,6 +345,7 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   // The latest data-folder warning not shown yet, and the last one shown.
   std::string pendingDataFolderWarning_;
   std::string shownDataFolderWarning_;
+  bool pendingDataFolderIsFallback_ = false;
   std::shared_ptr<KeyHandler> keyHandler_;
   std::unique_ptr<InputState> state_;
   McBopomofoConfig config_;

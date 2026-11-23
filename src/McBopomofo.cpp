@@ -628,20 +628,36 @@ void McBopomofoEngine::applyUserDataFolder() {
   auto folder = SmartLearning::resolveUserDataFolder(
       config_.userDataFolder.value(),
       languageModelLoader_->defaultUserDataPath(), &warning);
+  pendingDataFolderIsFallback_ = !warning.empty();
+  if (folder.empty()) {
+    return;
+  }
+  if (folder.string() != languageModelLoader_->userDataPath()) {
+    languageModelLoader_->setUserDataFolder(folder);
+    userFileIssues_ = languageModelLoader_->getUserFileIssues();
+    if (userOverrideStore_) {
+      applyLearningFolder();
+    }
+  }
+  // A folder chosen by the user is never populated with template files; tell
+  // the user when the real files are not there (yet).
+  if (warning.empty() &&
+      !SmartLearning::shouldCreateTemplateFiles(
+          folder, languageModelLoader_->defaultUserDataPath())) {
+    for (const char* name : {"data.txt", "exclude-phrases.txt"}) {
+      std::error_code ec;
+      if (!std::filesystem::exists(folder / name, ec)) {
+        warning = std::string(name) + " was not found in " + folder.string() +
+                  "; waiting for it to sync";
+        break;
+      }
+    }
+  }
   if (warning.empty()) {
     pendingDataFolderWarning_.clear();
     shownDataFolderWarning_.clear();
   } else {
     pendingDataFolderWarning_ = warning;
-  }
-  if (folder.empty() ||
-      folder.string() == languageModelLoader_->userDataPath()) {
-    return;
-  }
-  languageModelLoader_->setUserDataFolder(folder);
-  userFileIssues_ = languageModelLoader_->getUserFileIssues();
-  if (userOverrideStore_) {
-    applyLearningFolder();
   }
 }
 
@@ -652,12 +668,16 @@ void McBopomofoEngine::showUserDataFolderWarning() {
   }
   shownDataFolderWarning_ = pendingDataFolderWarning_;
   std::string body = pendingDataFolderWarning_;
-  body += "\n";
-  body += _("The default folder is used instead.");
+  if (pendingDataFolderIsFallback_) {
+    body += "\n";
+    body += _("The default folder is used instead.");
+  }
   if (notifications()) {
     notifications()->call<fcitx::INotifications::showTip>(
         "mcbopomofo-user-data-folder", _("McBopomofo"), "fcitx_mcbopomofo",
-        _("User data folder not used"), body, kFcitx5NotificationTimeoutInMs);
+        pendingDataFolderIsFallback_ ? _("User data folder not used")
+                                     : _("User data folder is incomplete"),
+        body, kFcitx5NotificationTimeoutInMs);
   } else {
     FCITX_MCBOPOMOFO_ERROR() << body;
   }

@@ -74,4 +74,11 @@ std::filesystem::path resolveUserDataFolder(
   return path;
 }
 
+bool shouldCreateTemplateFiles(const std::filesystem::path& folder,
+                               const std::filesystem::path& defaultFolder) {
+  return !folder.empty() &&
+         (folder / "").lexically_normal() ==
+             (defaultFolder / "").lexically_normal();
+}
+
 }  // namespace McBopomofo::SmartLearning
