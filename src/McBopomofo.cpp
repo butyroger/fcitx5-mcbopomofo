@@ -34,6 +34,7 @@
 
 #include <unistd.h>
 
+#include <chrono>
 #include <ctime>
 #include <filesystem>
 #include <memory>
@@ -469,14 +470,31 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   }
   userOverrideStore_ = std::make_shared<SmartLearning::UserOverrideStore>(
       config_.deviceID.value(), hostName);
+  englishWordStore_ = std::make_shared<SmartLearning::EnglishWordStore>(
+      config_.deviceID.value(), hostName,
+      SmartLearning::EnglishLexicon::loadFromFile(
+          SmartLearning::kDefaultEnglishWordList),
+      [] {
+        return std::chrono::duration<double>(
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
+      });
   applyUserDataFolder();
   applyLearningFolder();
   keyHandler_ = std::make_shared<KeyHandler>(
       languageModelLoader_->getLM(),
       languageModelLoader_->getVariantAnnotator(), languageModelLoader_,
       std::make_unique<KeyHandlerLocalizedString>(), userOverrideStore_);
-  keyHandler_->setOnUserOverrideObserved(
-      [this]() { scheduleLearningSave(); });
+  keyHandler_->setOnUserOverrideObserved([this]() {
+    userOverrideSavePending_ = true;
+    scheduleLearningSave();
+  });
+  keyHandler_->setEnglishWordStore(englishWordStore_);
+  keyHandler_->setOnEnglishWordsRecorded([this]() {
+    if (englishWordStore_->hasUnsavedChanges()) {
+      scheduleLearningSave();
+    }
+  });
   keyHandler_->setOnAddNewPhrase([this](std::string newPhrase) {
     auto addScriptHookEnabled = config_.addScriptHookEnabled.value();
     if (!addScriptHookEnabled) {
@@ -609,15 +627,36 @@ McBopomofoEngine::~McBopomofoEngine() {
   if (userOverrideStore_) {
     userOverrideStore_->save();
   }
+  if (englishWordStore_ && englishWordStore_->hasUnsavedChanges()) {
+    englishWordStore_->save();
+  }
+}
+
+bool McBopomofoEngine::saveLearning() {
+  bool saved = true;
+  if (userOverrideSavePending_) {
+    if (userOverrideStore_->save()) {
+      userOverrideSavePending_ = false;
+    } else {
+      saved = false;
+    }
+  }
+  if (englishWordStore_->hasUnsavedChanges() && !englishWordStore_->save()) {
+    saved = false;
+  }
+  return saved;
 }
 
 void McBopomofoEngine::applyLearningFolder() {
   if (languageModelLoader_->userDataPath().empty()) {
     return;
   }
-  userOverrideStore_->setLearningFolder(
-      std::filesystem::path(languageModelLoader_->userDataPath()) /
-      "learning");
+  auto learningFolder =
+      std::filesystem::path(languageModelLoader_->userDataPath()) / "learning";
+  userOverrideStore_->setLearningFolder(learningFolder);
+  if (englishWordStore_) {
+    englishWordStore_->setLearningFolder(learningFolder);
+  }
 }
 
 void McBopomofoEngine::applyUserDataFolder() {
@@ -690,7 +729,7 @@ void McBopomofoEngine::scheduleLearningSave() {
       [this](fcitx::EventSourceTime* source, uint64_t) {
         // Saving fails while the own file has not been loaded yet (for
         // example it is still being synced); try once more later.
-        if (!userOverrideStore_->save() && !learningSaveRetried_) {
+        if (!saveLearning() && !learningSaveRetried_) {
           learningSaveRetried_ = true;
           source->setTime(fcitx::now(CLOCK_MONOTONIC) + 2000000);
           source->setOneShot();
@@ -819,6 +858,11 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
       config_.repeatedPunctuationToSelectCandidateEnabled.value());
   keyHandler_->setChooseCandidateUsingSpace(
       config_.chooseCandidateUsingSpace.value());
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(
+      config_.smartChineseEnglishSwitchEnabled.value());
+  keyHandler_->setAutoSpaceBetweenChineseAndEnglish(
+      config_.autoSpaceBetweenChineseAndEnglish.value());
+  keyHandler_->setFixEnglishWordCase(config_.fixEnglishWordCase.value());
 
   if (mode == McBopomofo::InputMode::McBopomofo) {
     // Font annotation is only supported in McBopomofo, not Plain McBopomofo.
@@ -840,6 +884,13 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   if (!userFileIssues_.empty()) {
     showAndClearUserFileIssues();
   }
+}
+
+void McBopomofoEngine::deactivate(const fcitx::InputMethodEntry& entry,
+                                  fcitx::InputContextEvent& event) {
+  // Commits what is being typed, which records the English words in it.
+  fcitx::InputMethodEngine::deactivate(entry, event);
+  saveLearning();
 }
 
 void McBopomofoEngine::reset(const fcitx::InputMethodEntry& /*unused*/,

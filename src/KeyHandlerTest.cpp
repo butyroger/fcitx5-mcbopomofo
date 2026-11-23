@@ -367,6 +367,9 @@ TEST_F(KeyHandlerTest, SelectCandidatesAfterCursor) {
 }
 
 TEST_F(KeyHandlerTest, UppercaseLetterCommitComposingBufferByDefault) {
+  // Without the smart switching between Chinese and English, which takes an
+  // uppercase letter as the start of English.
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   auto endState = handleKeySequence(asciiKeys("jp6A"));
   auto committingState = dynamic_cast<InputStates::Committing*>(endState.get());
   ASSERT_TRUE(committingState != nullptr);
@@ -374,12 +377,18 @@ TEST_F(KeyHandlerTest, UppercaseLetterCommitComposingBufferByDefault) {
 }
 
 TEST_F(KeyHandlerTest, UppercaseLetterNotHandledIfComposingBufferIsEmpty) {
+  // Without the smart switching between Chinese and English, which takes an
+  // uppercase letter as the start of English.
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   auto endState = handleKeySequence(asciiKeys("A"), /*expectHandled=*/false);
   auto emptyState = dynamic_cast<InputStates::Empty*>(endState.get());
   ASSERT_TRUE(emptyState != nullptr);
 }
 
 TEST_F(KeyHandlerTest, UppercaseLetterConvertedToLowercaseInComposingBuffer) {
+  // Without the smart switching between Chinese and English, which takes an
+  // uppercase letter as the start of English.
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   keyHandler_->setPutLowercaseLettersToComposingBuffer(true);
   auto endState = handleKeySequence(asciiKeys("jp6A"));
   auto inputtingState = dynamic_cast<InputStates::Inputting*>(endState.get());
@@ -507,6 +516,9 @@ TEST_F(KeyHandlerTest,
 TEST_F(
     KeyHandlerTest,
     NonViableCompositionShouldRevertToEmptyStateIfComposingBufferEndsUpEmptyCase1) {
+  // Without the smart switching between Chinese and English, which takes the
+  // keys of a reading that is not a syllable as English.
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   auto keys = asciiKeys("13");
   // ㄅˇ is not a viable composition.
   auto endState = handleKeySequence(keys, /*expectHandled=*/true,
@@ -516,6 +528,9 @@ TEST_F(
 }
 
 TEST_F(KeyHandlerTest, NonViableCompositionKeepsReadingWhenConfigured) {
+  // Without the smart switching between Chinese and English, which takes the
+  // keys of a reading that is not a syllable as English.
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   keyHandler_->setKeepInvalidSyllableForFurtherInput(true);
 
   // ㄅˇ is not a viable composition, but should remain editable.
@@ -529,6 +544,9 @@ TEST_F(KeyHandlerTest, NonViableCompositionKeepsReadingWhenConfigured) {
 
 TEST_F(KeyHandlerTest,
        NonViableCompositionCanBeCorrectedWhenReadingIsKept) {
+  // Without the smart switching between Chinese and English, which takes the
+  // keys of a reading that is not a syllable as English.
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   keyHandler_->setKeepInvalidSyllableForFurtherInput(true);
 
   auto keys = asciiKeys("13");
@@ -542,6 +560,9 @@ TEST_F(KeyHandlerTest,
 
 TEST_F(KeyHandlerTest,
        NewReadingKeyClearsToneAfterCompositionError) {
+  // Without the smart switching between Chinese and English, which takes the
+  // keys of a reading that is not a syllable as English.
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   keyHandler_->setKeepInvalidSyllableForFurtherInput(true);
 
   // ㄅˇ is not viable. Typing ㄚ next should first remove ˇ, matching the
@@ -556,6 +577,9 @@ TEST_F(KeyHandlerTest,
 TEST_F(
     KeyHandlerTest,
     NonViableCompositionShouldRevertToEmptyStateIfComposingBufferEndsUpEmptyCase2) {
+  // Without the smart switching between Chinese and English, which takes the
+  // keys of a reading that is not a syllable as English.
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   auto keys = asciiKeys("313");
   // "ˇㄅ" is not valid in McBopomofo. We are tolerant for some cases, such as
   // we accept "ˇ一"  to be "以" since it is usually a user just want to type
@@ -569,6 +593,9 @@ TEST_F(
 TEST_F(
     KeyHandlerTest,
     NonViableCompositionShouldRevertToEmptyStateIfComposingBufferEndsUpEmptyCase3) {
+  // Without the smart switching between Chinese and English, which takes the
+  // keys of a reading that is not a syllable as English.
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   auto keys = asciiKeys("31 ");
   // "ˇㄅ" is not valid in McBopomofo. We are tolerant for some cases, such as
   // we accept "ˇ一"  to be "以" since it is usually a user just want to type

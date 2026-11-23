@@ -160,6 +160,24 @@ FCITX_CONFIGURATION(
         this, "KeepInvalidSyllableForFurtherInput",
         _("Keep invalid syllable for further input"), false};
 
+    // Type English without Shift or Caps Lock: letters that cannot be
+    // Bopomofo are put as English until a space, a symbol or Backspace.
+    fcitx::Option<bool> smartChineseEnglishSwitchEnabled{
+        this, "SmartChineseEnglishSwitchEnabled",
+        _("Smart Chinese/English Switch: Type English without Shift or Caps "
+          "Lock"),
+        true};
+
+    // Put a space between Chinese and English typed next to each other.
+    fcitx::Option<bool> autoSpaceBetweenChineseAndEnglish{
+        this, "AutoSpaceBetweenChineseAndEnglish",
+        _("Add a space between Chinese and English"), true};
+
+    // Fix the case of English words, like "iphone" to "iPhone", upon a space.
+    fcitx::Option<bool> fixEnglishWordCase{
+        this, "FixEnglishWordCase",
+        _("Fix the case of words like iPhone upon a space"), true};
+
     // Allow inputting Chinese when Caps Lock is on.
     fcitx::Option<bool> capsLockAllowChineseInput{
         this, "capsLockAllowChineseInput",
@@ -271,6 +289,8 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
                 fcitx::InputContextEvent& event) override;
   void reset(const fcitx::InputMethodEntry& entry,
              fcitx::InputContextEvent& event) override;
+  void deactivate(const fcitx::InputMethodEntry& entry,
+                  fcitx::InputContextEvent& event) override;
   void keyEvent(const fcitx::InputMethodEntry& entry,
                 fcitx::KeyEvent& keyEvent) override;
 
@@ -325,7 +345,8 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
 
   void showAndClearUserFileIssues();
 
-  // Points the learned-choice store at "<user data folder>/learning".
+  // Points the learned-choice store and the English words at
+  // "<user data folder>/learning".
   void applyLearningFolder();
   // Resolves the configured user data folder and switches to it.
   void applyUserDataFolder();
@@ -334,14 +355,20 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   // (Re)starts the 2-second timer after which the learned choices are saved.
   // Choices made in quick succession share one save.
   void scheduleLearningSave();
+  // Saves what has been learned and not saved yet. Returns false if anything
+  // could not be saved.
+  bool saveLearning();
 
   fcitx::CandidateLayoutHint getCandidateLayoutHint() const;
 
   std::shared_ptr<LanguageModelLoader> languageModelLoader_;
   std::vector<McBopomofoLM::UserFileIssue> userFileIssues_;
   std::shared_ptr<SmartLearning::UserOverrideStore> userOverrideStore_;
+  std::shared_ptr<SmartLearning::EnglishWordStore> englishWordStore_;
   std::unique_ptr<fcitx::EventSourceTime> learningSaveTimer_;
   bool learningSaveRetried_ = false;
+  // A choice has been learned since the learned choices were last saved.
+  bool userOverrideSavePending_ = false;
   // The latest data-folder warning not shown yet, and the last one shown.
   std::string pendingDataFolderWarning_;
   std::string shownDataFolderWarning_;

@@ -44,6 +44,9 @@ TEST(McBopomofoConfigTest, DefaultsMatchTheMacSetup) {
   EXPECT_FALSE(c.capsLockAllowChineseInput.value());
   EXPECT_EQ(c.deviceID.value(), "");
   EXPECT_EQ(c.userDataFolder.value(), "");
+  EXPECT_TRUE(c.smartChineseEnglishSwitchEnabled.value());
+  EXPECT_TRUE(c.autoSpaceBetweenChineseAndEnglish.value());
+  EXPECT_TRUE(c.fixEnglishWordCase.value());
 }
 
 }  // namespace McBopomofo

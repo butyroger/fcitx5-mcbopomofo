@@ -499,3 +499,15 @@ msgstr "一套智慧選字的注音輸入法"
 #: org.fcitx.Fcitx5.Addon.McBopomofo.metainfo.xml.in:10
 msgid "The McBopomofo Authors"
 msgstr "小麥注音作者群"
+
+#: src/McBopomofo.h
+msgid "Smart Chinese/English Switch: Type English without Shift or Caps Lock"
+msgstr "智慧中英切換：不按 Shift、Caps Lock 也能打英文（空白、符號或倒退鍵回到中文）"
+
+#: src/McBopomofo.h
+msgid "Add a space between Chinese and English"
+msgstr "中英文之間自動加空格"
+
+#: src/McBopomofo.h
+msgid "Fix the case of words like iPhone upon a space"
+msgstr "按空白時修正英文大小寫（如 iPhone）"

@@ -1,0 +1,378 @@
+// Copyright (c) 2026 and onwards The McBopomofo Authors.
+//
+// Permission is hereby granted, free of charge, to any person
+// obtaining a copy of this software and associated documentation
+// files (the "Software"), to deal in the Software without
+// restriction, including without limitation the rights to use,
+// copy, modify, merge, publish, distribute, sublicense, and/or sell
+// copies of the Software, and to permit persons to whom the
+// Software is furnished to do so, subject to the following
+// conditions:
+//
+// The above copyright notice and this permission notice shall be
+// included in all copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+// OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+// NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+// HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+// WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+// OTHER DEALINGS IN THE SOFTWARE.
+
+// The smart switching between Chinese and English, with the full language
+// model (which knows the readings of letters put as is) and a small English
+// word list.
+
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "EnglishWords.h"
+#include "KeyHandler.h"
+#include "gtest/gtest.h"
+
+namespace McBopomofo {
+namespace {
+
+using Formosa::Mandarin::BopomofoKeyboardLayout;
+using Formosa::Mandarin::BopomofoSyllable;
+
+class NoOpUserPhraseAdder : public UserPhraseAdder {
+ public:
+  void addUserPhrase(const std::string_view&,
+                     const std::string_view&) override {}
+  void removeUserPhrase(const std::string_view&,
+                        const std::string_view&) override {}
+};
+
+class PlainLocalizedStrings : public KeyHandler::LocalizedStrings {
+ public:
+  std::string cursorIsBetweenSyllables(const std::string&,
+                                       const std::string&) override {
+    return "";
+  }
+  std::string syllablesRequired(size_t) override { return ""; }
+  std::string syllablesMaximum(size_t) override { return ""; }
+  std::string phraseAlreadyExists() override { return ""; }
+  std::string pressEnterToAddThePhrase() override { return ""; }
+  std::string markedWithSyllablesAndStatus(const std::string&,
+                                           const std::string&,
+                                           const std::string&) override {
+    return "";
+  }
+  std::string bopomofoFontAnnotationModeTooltip(bool, bool) override {
+    return "";
+  }
+  std::string markingNotAvailableInFontAnnotationMode() override { return ""; }
+};
+
+// The keys typing the syllables one after another, with a space for the first
+// tone.
+std::string KeysForSyllables(const BopomofoKeyboardLayout* layout,
+                             const std::vector<std::string>& syllables) {
+  std::string keys;
+  for (const auto& s : syllables) {
+    BopomofoSyllable syllable = BopomofoSyllable::FromComposedString(s);
+    keys += layout->keySequenceFromSyllable(syllable);
+    if (!syllable.hasToneMarker()) {
+      keys += " ";
+    }
+  }
+  return keys;
+}
+
+class KeyHandlerSmartTest : public ::testing::Test {
+ protected:
+  void SetUp() override {
+    lm_ = std::make_shared<McBopomofoLM>();
+    lm_->loadLanguageModel(MCBOPOMOFO_TEST_FULL_DATA_PATH);
+    ASSERT_TRUE(lm_->isDataModelLoaded());
+
+    auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    folder_ = std::filesystem::temp_directory_path() /
+              ("keyhandler-smart-" + std::to_string(stamp) + "-" +
+               ::testing::UnitTest::GetInstance()->current_test_info()->name());
+    std::filesystem::create_directories(folder_ / "english");
+    overrideStore_ =
+        std::make_shared<SmartLearning::UserOverrideStore>("TESTDEV1", "test");
+    overrideStore_->setLearningFolder(folder_);
+
+    englishStore_ = std::make_shared<SmartLearning::EnglishWordStore>(
+        "TESTDEV1", "test",
+        SmartLearning::EnglishLexicon::fromWords(
+            {"hello", "help", "helpful", "app", "apple", "you", "ok", "iphone",
+             "email", "chat"}),
+        [] { return 1000.0; });
+    englishStore_->setLearningFolder(folder_);
+
+    keyHandler_ = std::make_unique<KeyHandler>(
+        lm_, nullptr, std::make_shared<NoOpUserPhraseAdder>(),
+        std::make_unique<PlainLocalizedStrings>(), overrideStore_);
+    keyHandler_->setEnglishWordStore(englishStore_);
+    keyHandler_->setSmartChineseEnglishSwitchEnabled(true);
+    keyHandler_->setAutoSpaceBetweenChineseAndEnglish(true);
+    keyHandler_->setFixEnglishWordCase(true);
+    useLayout(BopomofoKeyboardLayout::StandardLayout());
+  }
+
+  void TearDown() override {
+    std::error_code ec;
+    std::filesystem::remove_all(folder_, ec);
+  }
+
+  void useLayout(const BopomofoKeyboardLayout* layout) {
+    keyHandler_->setKeyboardLayout(layout);
+  }
+
+  // Types the keys, starting from the current state, and keeps what is
+  // committed.
+  void type(const std::string& keys) {
+    for (char c : keys) {
+      press(Key::asciiKey(c));
+    }
+  }
+
+  void press(const Key& key) {
+    keyHandler_->handle(
+        key, state_.get(),
+        [this](std::unique_ptr<InputState> newState) {
+          take(std::move(newState));
+        },
+        [] {});
+  }
+
+  void take(std::unique_ptr<InputState> newState) {
+    if (auto* seq = dynamic_cast<InputStates::StateSequence*>(newState.get())) {
+      for (auto& s : seq->states) {
+        take(std::move(s));
+      }
+      return;
+    }
+    if (auto* committing =
+            dynamic_cast<InputStates::Committing*>(newState.get())) {
+      committed_ += committing->text;
+      state_ = std::make_unique<InputStates::Empty>();
+      return;
+    }
+    if (dynamic_cast<InputStates::EmptyIgnoringPrevious*>(newState.get()) !=
+        nullptr) {
+      state_ = std::make_unique<InputStates::Empty>();
+      return;
+    }
+    state_ = std::move(newState);
+  }
+
+  std::string composingBuffer() {
+    auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+    return inputting != nullptr ? inputting->composingBuffer : "";
+  }
+
+  void restart() {
+    keyHandler_->reset();
+    state_ = std::make_unique<InputStates::Empty>();
+    committed_.clear();
+  }
+
+  std::shared_ptr<McBopomofoLM> lm_;
+  std::filesystem::path folder_;
+  std::shared_ptr<SmartLearning::UserOverrideStore> overrideStore_;
+  std::shared_ptr<SmartLearning::EnglishWordStore> englishStore_;
+  std::unique_ptr<KeyHandler> keyHandler_;
+  std::unique_ptr<InputState> state_ = std::make_unique<InputStates::Empty>();
+  std::string committed_;
+};
+
+}  // namespace
+
+TEST_F(KeyHandlerSmartTest, ReplacedComponentSwitchesToEnglish) {
+  // ㄇㄣ, then ㄣ again.
+  type("app");
+  EXPECT_EQ(composingBuffer(), "app");
+  EXPECT_TRUE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, NonSyllableWithSpaceBecomesEnglishWord) {
+  // ㄗㄧㄟ is not a syllable.
+  type("you ");
+  EXPECT_EQ(composingBuffer(), "you ");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, NonSyllableWithEnterIsCommittedAsEnglish) {
+  type("you");
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "you");
+  EXPECT_EQ(composingBuffer(), "");
+}
+
+TEST_F(KeyHandlerSmartTest, UppercaseStartsEnglish) {
+  type("ChatGPT");
+  EXPECT_EQ(composingBuffer(), "ChatGPT");
+  EXPECT_TRUE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, SymbolAfterUnfinishedBopomofo) {
+  type("ok?");
+  EXPECT_EQ(composingBuffer(), "ok?");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+
+  // ㄋㄧ, then a key that is not Bopomofo.
+  restart();
+  type("su?");
+  EXPECT_EQ(composingBuffer(), "su?");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, DigitsThenSpaceNoSpace) {
+  // 年 is ㄋㄧㄢˊ.
+  type("2026 su06");
+  EXPECT_EQ(composingBuffer(), "2026年");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, EnglishThenChineseWithoutSpace) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  // ㄏㄠˇ right after "hello".
+  type("hellohwf");
+  EXPECT_EQ(composingBuffer(), "hello 好");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+
+  // ㄉㄤˇ right after "PDF"; the most likely character of ㄉㄤˇ is picked.
+  restart();
+  type("PDFdkf");
+  EXPECT_EQ(composingBuffer(), "PDF 黨");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+
+  // Letters that may still be a word are kept: "helpf" for helpful.
+  restart();
+  type("helpf");
+  EXPECT_EQ(composingBuffer(), "helpf");
+  EXPECT_TRUE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, AutoSpaceBetweenChineseAndEnglish) {
+  type("su3cl3hello");
+  EXPECT_EQ(composingBuffer(), "你好 hello");
+
+  restart();
+  keyHandler_->setAutoSpaceBetweenChineseAndEnglish(false);
+  type("su3cl3hello");
+  EXPECT_EQ(composingBuffer(), "你好hello");
+}
+
+TEST_F(KeyHandlerSmartTest, CaseFixOnSpaceNotOnEnter) {
+  type("iphone ");
+  EXPECT_EQ(composingBuffer(), "iPhone ");
+
+  restart();
+  type("iphone");
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "iphone");
+
+  restart();
+  keyHandler_->setFixEnglishWordCase(false);
+  type("iphone ");
+  EXPECT_EQ(composingBuffer(), "iphone ");
+}
+
+TEST_F(KeyHandlerSmartTest, ShortEnglishThatIsBopomofoStaysChinese) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  type("a ");
+  std::string buffer = composingBuffer();
+  ASSERT_FALSE(buffer.empty());
+  EXPECT_GE(static_cast<unsigned char>(buffer[0]), 0x80) << buffer;
+  EXPECT_EQ(buffer.find('a'), std::string::npos) << buffer;
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, ChineseTypingUnchanged) {
+  // 我們今天下午去開會; 這個問題需要大家一起討論.
+  const std::vector<std::vector<std::string>> sentences = {
+      {"ㄨㄛˇ", "ㄇㄣˊ", "ㄐㄧㄣ", "ㄊㄧㄢ", "ㄒㄧㄚˋ", "ㄨˇ", "ㄑㄩˋ", "ㄎㄞ",
+       "ㄏㄨㄟˋ"},
+      {"ㄓㄜˋ", "ㄍㄜˋ", "ㄨㄣˋ", "ㄊㄧˊ", "ㄒㄩ", "ㄧㄠˋ", "ㄉㄚˋ", "ㄐㄧㄚ",
+       "ㄧˋ", "ㄑㄧˇ", "ㄊㄠˇ", "ㄌㄨㄣˋ"},
+  };
+  for (const auto* layout : {BopomofoKeyboardLayout::StandardLayout(),
+                             BopomofoKeyboardLayout::HsuLayout()}) {
+    for (const auto& syllables : sentences) {
+      std::string keys = KeysForSyllables(layout, syllables);
+      std::vector<std::string> buffers;
+      for (bool smart : {false, true}) {
+        restart();
+        useLayout(layout);
+        keyHandler_->setSmartChineseEnglishSwitchEnabled(smart);
+        type(keys);
+        buffers.push_back(composingBuffer());
+        EXPECT_FALSE(keyHandler_->isSmartEnglishMode()) << keys;
+      }
+      EXPECT_EQ(buffers[0], buffers[1]) << keys;
+      // All Chinese: no letters, digits or spaces were put as is.
+      for (char c : buffers[1]) {
+        EXPECT_GE(static_cast<unsigned char>(c), 0x80) << keys << " " << buffers[1];
+      }
+      EXPECT_GE(buffers[1].size(), syllables.size() * 3) << keys;
+    }
+  }
+}
+
+TEST_F(KeyHandlerSmartTest, LearnsEnglishWordsOnCommit) {
+  for (int i = 0; i < 2; i++) {
+    restart();
+    type("ButyPOS");
+    press(Key::asciiKey(Key::RETURN));
+    EXPECT_EQ(committed_, "ButyPOS");
+  }
+  EXPECT_EQ(englishStore_->preferredCase("butypos"), "ButyPOS");
+  EXPECT_TRUE(englishStore_->hasUnsavedChanges());
+  ASSERT_TRUE(englishStore_->save());
+  std::ifstream file(folder_ / "english" / "TESTDEV1-test.txt");
+  std::stringstream content;
+  content << file.rdbuf();
+  EXPECT_EQ(content.str(), "ButyPOS\t2\n");
+
+  restart();
+  type("butypos ");
+  EXPECT_EQ(composingBuffer(), "ButyPOS ");
+}
+
+TEST_F(KeyHandlerSmartTest, ModeChangeCallback) {
+  std::vector<bool> changes;
+  keyHandler_->setOnSmartEnglishModeChanged(
+      [&changes](bool english) { changes.push_back(english); });
+  type("app");
+  type("le");
+  type(" ");
+  EXPECT_EQ(changes, (std::vector<bool>{true, false}));
+  EXPECT_EQ(composingBuffer(), "apple ");
+}
+
+TEST_F(KeyHandlerSmartTest, NoSwitchingWhenTurnedOffOrInPlainBopomofo) {
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
+  type("app");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+  EXPECT_EQ(composingBuffer(), "ㄇㄣ");
+
+  restart();
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(true);
+  keyHandler_->setInputMode(InputMode::PlainBopomofo);
+  type("app");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+  EXPECT_EQ(composingBuffer(), "ㄇㄣ");
+}
+
+TEST_F(KeyHandlerSmartTest, ResetLeavesEnglishMode) {
+  type("app");
+  ASSERT_TRUE(keyHandler_->isSmartEnglishMode());
+  keyHandler_->reset();
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+}
+
+}  // namespace McBopomofo

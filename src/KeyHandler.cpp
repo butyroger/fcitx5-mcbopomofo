@@ -24,6 +24,7 @@
 #include "KeyHandler.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <memory>
 #include <sstream>
@@ -33,8 +34,10 @@
 
 #include "Big5Utils/Big5Utils.h"
 #include "BopomofoBraille/Converter.h"
+#include "BopomofoKeys.h"
 #include "IcuTransformInputHelper.h"
 #include "Log.h"
+#include "MixedInput.h"
 #include "NumberInputHelper.h"
 #include "UTF8Helper.h"
 
@@ -144,6 +147,82 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       (key.ctrlPressed || key.shiftPressed || key.isFromNumberPad) ? '\0'
                                                                    : key.ascii;
 
+  // Smart switching between Chinese and English.
+  bool smartSwitching = isSmartSwitchingAvailable(key);
+  const char charCode = key.ascii;
+  const auto uCharCode = static_cast<unsigned char>(charCode);
+  const bool isPrintableAscii = uCharCode < 0x80 && isprint(uCharCode);
+  if (smartSwitching && smartEnglishMode_) {
+    if (!smartEnglishDigitsOnly_ &&
+        convertTrailingEnglishToChinese(charCode, stateCallback)) {
+      return true;
+    }
+    if (charCode == Key::SPACE) {
+      // A space after digits only leaves the English mode, so that a number
+      // can be followed by Chinese, like "2026年".
+      if (!smartEnglishDigitsOnly_) {
+        fixCaseOfEnglishWordBeforeCursor();
+        insertLiteralText(" ");
+      }
+      setSmartEnglishMode(false);
+      stateCallback(buildInputtingState());
+      return true;
+    }
+    if (isPrintableAscii) {
+      insertLiteralText(std::string(1, charCode));
+      if (isalnum(uCharCode)) {
+        smartEnglishDigitsOnly_ =
+            smartEnglishDigitsOnly_ && isdigit(uCharCode);
+      } else {
+        setSmartEnglishMode(false);
+      }
+      stateCallback(buildInputtingState());
+      return true;
+    }
+    // Tab lists no English completions here.
+    if (charCode == Key::TAB && !key.shiftPressed) {
+      errorCallback();
+      return true;
+    }
+    // Backspace, Enter, Esc and so on are handled as usual.
+    setSmartEnglishMode(false);
+  } else if (smartSwitching) {
+    // An uppercase letter starts English, like "ChatGPT".
+    bool isUppercaseLetter = charCode >= 'A' && charCode <= 'Z';
+    if (isUppercaseLetter && !putLowercaseLettersToComposingBuffer_) {
+      switchToSmartEnglish(rawKeysOfCurrentReading() +
+                           std::string(1, charCode));
+      stateCallback(buildInputtingState());
+      return true;
+    }
+
+    if (!reading_.isEmpty() && isPrintableAscii && charCode != Key::SPACE) {
+      if (reading_.isValidKey(charCode)) {
+        // A key that replaces a part of the reading, like the second "p" in
+        // "app" (ㄇㄣ, then ㄣ again), does not make Chinese.
+        if (SmartLearning::KeyReplacesComponent(reading_, charCode)) {
+          switchToSmartEnglish(rawKeysOfCurrentReading() +
+                               std::string(1, charCode));
+          stateCallback(buildInputtingState());
+          return true;
+        }
+      } else if (!isUppercaseLetter) {
+        // A digit or a symbol right after an unfinished reading, like "ok?",
+        // makes the keys English, and the symbol is kept as is.
+        std::string keys = rawKeysOfCurrentReading();
+        clearReading();
+        insertLiteralText(keys);
+        if (isalnum(uCharCode)) {
+          switchToSmartEnglish(std::string(1, charCode));
+        } else {
+          insertLiteralText(std::string(1, charCode));
+        }
+        stateCallback(buildInputtingState());
+        return true;
+      }
+    }
+  }
+
   // See if it's valid BPMF reading.
   bool keyConsumedByReading = false;
   // A tone can remain in the reading either after a failed composition or
@@ -166,7 +245,11 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     }
   }
   if (reading_.isValidKey(simpleAscii)) {
+    if (reading_.isEmpty()) {
+      rawKeysOfReading_.clear();
+    }
     reading_.combineKey(simpleAscii);
+    rawKeysOfReading_ += simpleAscii;
     keyConsumedByReading = true;
     // If asciiChar does not lead to a tone marker, we are done. Tone marker
     // would lead to composing of the reading, which is handled after this.
@@ -187,6 +270,22 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     std::string syllable = reading_.syllable().composedString();
 
     if (!lm_->hasUnigrams(syllable)) {
+      if (smartSwitching) {
+        // Not a Chinese syllable, like "you" (ㄗㄧㄟ) and a space.
+        std::string keys = rawKeysOfCurrentReading();
+        clearReading();
+        if (simpleAscii == Key::SPACE) {
+          insertLiteralText(keys);
+          fixCaseOfEnglishWordBeforeCursor();
+          insertLiteralText(" ");
+          stateCallback(buildInputtingState());
+          return true;
+        }
+        // The tone key is a letter or a digit typed in English.
+        switchToSmartEnglish(keys);
+        stateCallback(buildInputtingState());
+        return true;
+      }
       errorCallback();
 
       if (keepInvalidSyllableForFurtherInput_) {
@@ -205,6 +304,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     }
 
     clearReading();
+    insertAutoSpaceIfNeeded(/*beforeEnglish=*/false);
     grid_.insertReading(syllable);
     walk();
 
@@ -278,6 +378,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     walk();
     auto inputtingState = buildInputtingState();
     if (grid_.cursor() >= grid_.length()) {
+      learnEnglishWordsFromWalk();
       // Steal the composingBuffer built by the inputting state.
       auto committingState = std::make_unique<InputStates::Committing>(
           inputtingState->composingBuffer);
@@ -350,6 +451,19 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     }
 
     if (!reading_.isEmpty()) {
+      if (smartSwitching &&
+          !lm_->hasUnigrams(reading_.syllable().composedString())) {
+        // Not a Chinese syllable: the keys are committed as English.
+        std::string keys = rawKeysOfCurrentReading();
+        clearReading();
+        insertLiteralText(keys);
+        learnEnglishWordsFromWalk();
+        auto inputtingState = buildInputtingState();
+        stateCallback(std::make_unique<InputStates::Committing>(
+            inputtingState->composingBuffer));
+        reset();
+        return true;
+      }
       errorCallback();
       stateCallback(buildInputtingState());
       return true;
@@ -437,6 +551,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       return true;
     }
 
+    learnEnglishWordsFromWalk();
     auto inputtingState = buildInputtingState();
     // Steal the composingBuffer built by the inputting state.
     auto committingState = std::make_unique<InputStates::Committing>(
@@ -542,6 +657,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
           grid_.overrideCandidate(loc, chrStr);
         }
         walk();
+        learnEnglishWordsFromWalk();
         auto inputtingState = buildInputtingState();
         // Steal the composingBuffer built by the inputting state.
         auto committingState = std::make_unique<InputStates::Committing>(
@@ -755,7 +871,9 @@ void KeyHandler::excludePhrase(const std::string& reading,
 }
 
 void KeyHandler::reset() {
+  setSmartEnglishMode(false);
   clearReading();
+  rawKeysOfReading_.clear();
   grid_.clear();
   latestWalk_ = Formosa::Gramambular2::ReadingGrid::WalkResult();
 }
@@ -813,6 +931,26 @@ void KeyHandler::setHalfWidthPunctuationEnabled(bool enabled) {
 void KeyHandler::setOnAddNewPhrase(
     std::function<void(const std::string&)> onAddNewPhrase) {
   onAddNewPhrase_ = std::move(onAddNewPhrase);
+}
+
+void KeyHandler::setSmartChineseEnglishSwitchEnabled(bool enabled) {
+  smartChineseEnglishSwitchEnabled_ = enabled;
+  if (!enabled) {
+    setSmartEnglishMode(false);
+  }
+}
+
+void KeyHandler::setAutoSpaceBetweenChineseAndEnglish(bool enabled) {
+  autoSpaceBetweenChineseAndEnglish_ = enabled;
+}
+
+void KeyHandler::setFixEnglishWordCase(bool enabled) {
+  fixEnglishWordCase_ = enabled;
+}
+
+void KeyHandler::setEnglishWordStore(
+    std::shared_ptr<SmartLearning::EnglishWordStore> store) {
+  englishWordStore_ = std::move(store);
 }
 
 void KeyHandler::setRepeatedPunctuationToSelectCandidateEnabled(bool enabled) {
@@ -948,6 +1086,7 @@ bool KeyHandler::handleAssociatedPhrases(InputStates::Inputting* state,
 
 void KeyHandler::handleForceCommitAndReset(StateCallback stateCallback) {
   clearReading();
+  learnEnglishWordsFromWalk();
   auto inputtingState = buildInputtingState();
   auto committingState = std::make_unique<InputStates::Committing>(
       inputtingState->composingBuffer);
@@ -1952,5 +2091,159 @@ void KeyHandler::pinNodeWithAssociatedPhrase(
 }
 
 void KeyHandler::walk() { latestWalk_ = grid_.walk(); }
+
+#pragma region Smart_Chinese_English
+
+bool KeyHandler::isSmartSwitchingAvailable(const Key& key) const {
+  return smartChineseEnglishSwitchEnabled_ &&
+         inputMode_ == McBopomofo::InputMode::McBopomofo &&
+         reading_.keyboardLayout() !=
+             Formosa::Mandarin::BopomofoKeyboardLayout::HanyuPinyinLayout() &&
+         !key.ctrlPressed && !key.isFromNumberPad;
+}
+
+void KeyHandler::setSmartEnglishMode(bool englishMode) {
+  if (smartEnglishMode_ == englishMode) {
+    return;
+  }
+  smartEnglishMode_ = englishMode;
+  if (onSmartEnglishModeChanged_) {
+    onSmartEnglishModeChanged_(englishMode);
+  }
+}
+
+std::string KeyHandler::rawKeysOfCurrentReading() const {
+  return SmartLearning::RawKeysOfCurrentReading(reading_, rawKeysOfReading_);
+}
+
+void KeyHandler::insertLiteralText(const std::string& text) {
+  bool inserted = false;
+  if (!text.empty() && static_cast<unsigned char>(text[0]) < 0x80 &&
+      isalpha(static_cast<unsigned char>(text[0]))) {
+    inserted = insertAutoSpaceIfNeeded(/*beforeEnglish=*/true);
+  }
+  for (const auto& character : Split(text)) {
+    std::string reading = std::string(McBopomofoLM::kLiteralKeyPrefix) +
+                          character;
+    inserted = grid_.insertReading(reading) || inserted;
+  }
+  if (inserted) {
+    walk();
+  }
+}
+
+bool KeyHandler::insertAutoSpaceIfNeeded(bool beforeEnglish) {
+  if (!autoSpaceBetweenChineseAndEnglish_ ||
+      inputMode_ != McBopomofo::InputMode::McBopomofo) {
+    return false;
+  }
+  if (!SmartLearning::AutoSpaceNeeded(grid_.readings(), grid_.cursor(),
+                                      beforeEnglish)) {
+    return false;
+  }
+  return grid_.insertReading(SmartLearning::kAutoSpaceReading);
+}
+
+void KeyHandler::switchToSmartEnglish(const std::string& text) {
+  clearReading();
+  rawKeysOfReading_.clear();
+  bool digitsOnly = std::all_of(text.begin(), text.end(), [](char c) {
+    return isdigit(static_cast<unsigned char>(c));
+  });
+  insertLiteralText(text);
+  setSmartEnglishMode(true);
+  smartEnglishDigitsOnly_ = digitsOnly;
+}
+
+void KeyHandler::fixCaseOfEnglishWordBeforeCursor() {
+  if (!fixEnglishWordCase_ || englishWordStore_ == nullptr) {
+    return;
+  }
+  std::string word =
+      SmartLearning::TrailingLetters(grid_.readings(), grid_.cursor());
+  if (word.size() < 2) {
+    return;
+  }
+  auto fixed = englishWordStore_->preferredCase(word);
+  if (!fixed.has_value() || fixed->size() != word.size() || *fixed == word) {
+    return;
+  }
+  for (size_t i = 0; i < word.size(); i++) {
+    grid_.deleteReadingBeforeCursor();
+  }
+  insertLiteralText(*fixed);
+}
+
+bool KeyHandler::convertTrailingEnglishToChinese(
+    char key, const StateCallback& stateCallback) {
+  std::string run =
+      SmartLearning::TrailingLetters(grid_.readings(), grid_.cursor());
+  auto plan = SmartLearning::PlanTrailingEnglishToChinese(
+      run, key, reading_.keyboardLayout(),
+      [this](const std::string& reading) { return lm_->hasUnigrams(reading); },
+      [this](const std::string& text) { return isEnglishWord(text); },
+      [this](const std::string& text) { return isEnglishWordOrPrefix(text); });
+  if (!plan.has_value()) {
+    return false;
+  }
+  for (size_t i = 0; i < plan->lettersToDelete; i++) {
+    grid_.deleteReadingBeforeCursor();
+  }
+  setSmartEnglishMode(false);
+  fixCaseOfEnglishWordBeforeCursor();
+  insertAutoSpaceIfNeeded(/*beforeEnglish=*/false);
+  grid_.insertReading(plan->reading);
+  walk();
+  stateCallback(buildInputtingState());
+  return true;
+}
+
+void KeyHandler::learnEnglishWordsFromWalk() {
+  if (inputMode_ != McBopomofo::InputMode::McBopomofo ||
+      englishWordStore_ == nullptr) {
+    return;
+  }
+  const std::string literal = McBopomofoLM::kLiteralKeyPrefix;
+  const std::string english = McBopomofoLM::kEnglishKeyPrefix;
+  std::vector<std::string> words;
+  std::string word;
+  for (const auto& node : latestWalk_.nodes) {
+    const std::string& reading = node->reading();
+    std::string value = node->value();
+    bool isLetter = value.size() == 1 &&
+                    static_cast<unsigned char>(value[0]) < 0x80 &&
+                    isalpha(static_cast<unsigned char>(value[0]));
+    if ((reading.rfind(literal, 0) == 0 && isLetter) ||
+        reading.rfind(english, 0) == 0) {
+      word += value;
+      continue;
+    }
+    if (!word.empty()) {
+      words.push_back(word);
+      word.clear();
+    }
+  }
+  if (!word.empty()) {
+    words.push_back(word);
+  }
+  if (words.empty()) {
+    return;
+  }
+  englishWordStore_->record(words);
+  if (onEnglishWordsRecorded_) {
+    onEnglishWordsRecorded_();
+  }
+}
+
+bool KeyHandler::isEnglishWord(const std::string& text) const {
+  return englishWordStore_ != nullptr && englishWordStore_->isWord(text);
+}
+
+bool KeyHandler::isEnglishWordOrPrefix(const std::string& text) const {
+  return englishWordStore_ != nullptr &&
+         englishWordStore_->isWordOrPrefix(text);
+}
+
+#pragma endregion Smart_Chinese_English
 
 }  // namespace McBopomofo

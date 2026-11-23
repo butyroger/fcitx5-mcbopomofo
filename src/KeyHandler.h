@@ -29,6 +29,7 @@
 #include <string>
 
 #include "DictionaryService.h"
+#include "EnglishWords.h"
 #include "Engine/Mandarin/Mandarin.h"
 #include "Engine/UserOverrideModel.h"
 #include "Engine/gramambular2/language_model.h"
@@ -188,6 +189,38 @@ class KeyHandler {
   void setOnAddNewPhrase(
       std::function<void(const std::string&)> onAddNewPhrase);
 
+  // Sets whether English can be typed without Shift or Caps Lock: letters
+  // that cannot be Bopomofo, or are typed after an uppercase letter, are put
+  // as is until a space, a symbol or Backspace.
+  void setSmartChineseEnglishSwitchEnabled(bool enabled);
+
+  // Sets whether a space is put between Chinese and English typed next to
+  // each other.
+  void setAutoSpaceBetweenChineseAndEnglish(bool enabled);
+
+  // Sets whether the case of an English word is fixed upon a space, like
+  // "iphone" to "iPhone".
+  void setFixEnglishWordCase(bool enabled);
+
+  // The English words typed, to tell words from mistyped Bopomofo and to fix
+  // their case. Words committed are recorded in it.
+  void setEnglishWordStore(
+      std::shared_ptr<SmartLearning::EnglishWordStore> store);
+
+  // Invoked when the smart English mode is entered or left.
+  void setOnSmartEnglishModeChanged(std::function<void(bool)> callback) {
+    onSmartEnglishModeChanged_ = std::move(callback);
+  }
+
+  // Invoked after English words have been recorded, so that the owner can
+  // schedule saving them.
+  void setOnEnglishWordsRecorded(std::function<void()> callback) {
+    onEnglishWordsRecorded_ = std::move(callback);
+  }
+
+  // Whether the letters typed are being put as English.
+  [[nodiscard]] bool isSmartEnglishMode() const { return smartEnglishMode_; }
+
   //  Sets whether repeated punctuation characters should be used to select
   //  candidates.
   void setRepeatedPunctuationToSelectCandidateEnabled(bool enabled);
@@ -316,6 +349,35 @@ class KeyHandler {
 
   void walk();
 
+#pragma region Smart_Chinese_English
+
+  // Whether the key may switch between Chinese and English.
+  bool isSmartSwitchingAvailable(const Key& key) const;
+  void setSmartEnglishMode(bool englishMode);
+  // The keys typed for the current reading.
+  std::string rawKeysOfCurrentReading() const;
+  // Puts the text into the composing buffer as is, one reading for each
+  // character, after a space if it starts with a letter right after Chinese.
+  void insertLiteralText(const std::string& text);
+  // Puts a space before English typed after Chinese (|beforeEnglish|), or
+  // before Chinese typed after English. Returns true if a space was put.
+  bool insertAutoSpaceIfNeeded(bool beforeEnglish);
+  // Turns the unfinished reading into English and starts the English mode
+  // with the text.
+  void switchToSmartEnglish(const std::string& text);
+  // Fixes the case of the English word before the cursor, like "iPhone".
+  void fixCaseOfEnglishWordBeforeCursor();
+  // Turns the last letters before the cursor into Chinese when the key ends
+  // a syllable typed right after an English word.
+  bool convertTrailingEnglishToChinese(char key,
+                                       const StateCallback& stateCallback);
+  // Records the English words in the composition about to be committed.
+  void learnEnglishWordsFromWalk();
+  bool isEnglishWord(const std::string& text) const;
+  bool isEnglishWordOrPrefix(const std::string& text) const;
+
+#pragma endregion Smart_Chinese_English
+
   std::shared_ptr<Formosa::Gramambular2::LanguageModel> lm_;
   std::shared_ptr<VariantAnnotator> variantAnnotator_;
   Formosa::Gramambular2::ReadingGrid grid_;
@@ -325,6 +387,16 @@ class KeyHandler {
   std::shared_ptr<SmartLearning::UserOverrideStore> userOverrideStore_;
   std::function<void()> onUserOverrideObserved_;
   Formosa::Mandarin::BopomofoReadingBuffer reading_;
+  // The keys typed for the reading being composed, so that they can be
+  // turned into English as typed.
+  std::string rawKeysOfReading_;
+  bool smartEnglishMode_ = false;
+  // Only digits have been typed in the English mode, so a space only leaves
+  // the mode, like "2026年".
+  bool smartEnglishDigitsOnly_ = false;
+  std::shared_ptr<SmartLearning::EnglishWordStore> englishWordStore_;
+  std::function<void(bool)> onSmartEnglishModeChanged_;
+  std::function<void()> onEnglishWordsRecorded_;
   Formosa::Gramambular2::ReadingGrid::WalkResult latestWalk_;
   std::shared_ptr<DictionaryServices> dictionaryServices_;
 
@@ -343,6 +415,9 @@ class KeyHandler {
   bool repeatedPunctuationToSelectCandidateEnabled_ = false;
   bool chooseCandidateUsingSpace_ = true;
   bool bopomofoFontAnnotationSupportEnabled_ = false;
+  bool smartChineseEnglishSwitchEnabled_ = true;
+  bool autoSpaceBetweenChineseAndEnglish_ = true;
+  bool fixEnglishWordCase_ = true;
   KeyHandlerCtrlEnter ctrlEnterKey_ = KeyHandlerCtrlEnter::Disabled;
   std::function<void(const std::string&)> onAddNewPhrase_;
 
