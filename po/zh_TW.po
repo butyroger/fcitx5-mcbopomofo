@@ -515,3 +515,11 @@ msgstr "英文、數字後的標點用半形"
 #: src/McBopomofo.h
 msgid "Fix the case of words like iPhone upon a space"
 msgstr "按空白時修正英文大小寫（如 iPhone）"
+
+#: src/McBopomofo.h:158
+msgid "ESC key removes only mistyped text at the end"
+msgstr "按 ESC 只清除字尾打錯的亂碼，保留最後一個完整的中文或英文字（連按兩下清除全部）"
+
+#: src/McBopomofo.cpp:402
+msgid "Press Esc again to clear all"
+msgstr "再按一次 Esc 清除全部"

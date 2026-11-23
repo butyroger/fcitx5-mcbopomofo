@@ -120,6 +120,11 @@ KeyHandler::KeyHandler(
 bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
                         StateCallback stateCallback,
                         ErrorCallback errorCallback) {
+  // Pressing ESC twice in a row clears everything; any other key in between
+  // breaks it.
+  const bool escPressedTwice = lastKeyWasTrimmingEsc_ && key.ascii == Key::ESC;
+  lastKeyWasTrimmingEsc_ = false;
+
   if (key.ascii == '\\' && key.ctrlPressed) {
     auto seq = std::make_unique<InputStates::StateSequence>();
     seq->push_back(std::make_unique<InputStates::Empty>());
@@ -408,6 +413,12 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
   if (simpleAscii == Key::ESC) {
     if (maybeNotEmptyState == nullptr) {
       return false;
+    }
+
+    if (escTrimsMistypedText_ &&
+        dynamic_cast<InputStates::Inputting*>(state) != nullptr) {
+      handleEscTrimmingMistypedText(escPressedTwice, stateCallback);
+      return true;
     }
 
     if (escKeyClearsEntireComposingBuffer_) {
@@ -910,6 +921,10 @@ void KeyHandler::setPutLowercaseLettersToComposingBuffer(bool flag) {
 
 void KeyHandler::setEscKeyClearsEntireComposingBuffer(bool flag) {
   escKeyClearsEntireComposingBuffer_ = flag;
+}
+
+void KeyHandler::setEscTrimsMistypedText(bool flag) {
+  escTrimsMistypedText_ = flag;
 }
 
 void KeyHandler::setKeepInvalidSyllableForFurtherInput(bool flag) {
@@ -2257,6 +2272,66 @@ void KeyHandler::learnEnglishWordsFromWalk() {
   if (onEnglishWordsRecorded_) {
     onEnglishWordsRecorded_();
   }
+}
+
+bool KeyHandler::trimMistypedTextBeforeCursor() {
+  bool trimmed = false;
+  if (!reading_.isEmpty()) {
+    clearReading();
+    rawKeysOfReading_.clear();
+    trimmed = true;
+  }
+
+  size_t count = SmartLearning::PlanTrimBeforeCursor(
+      grid_.readings(), grid_.cursor(),
+      [this](const std::string& text) { return isEnglishWord(text); });
+  for (size_t i = 0; i < count; i++) {
+    grid_.deleteReadingBeforeCursor();
+  }
+  if (count > 0) {
+    trimmed = true;
+  }
+
+  if (trimmed) {
+    size_t cursor = grid_.cursor();
+    bool endsWithLetter =
+        cursor > 0 && SmartLearning::IsLetterReading(grid_.readings()[cursor - 1]);
+    if (!endsWithLetter) {
+      setSmartEnglishMode(false);
+    }
+    walk();
+  }
+  return trimmed;
+}
+
+void KeyHandler::handleEscTrimmingMistypedText(
+    bool pressedTwice, const StateCallback& stateCallback) {
+  if (!pressedTwice && trimMistypedTextBeforeCursor()) {
+    lastKeyWasTrimmingEsc_ = true;
+    if (reading_.isEmpty() && grid_.length() == 0) {
+      stateCallback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
+      return;
+    }
+    auto inputting = buildInputtingState();
+    if (inputting->tooltip.empty()) {
+      inputting = std::make_unique<InputStates::Inputting>(
+          inputting->composingBuffer, inputting->cursorIndex,
+          localizedStrings_->pressEscAgainToClearAll());
+    }
+    stateCallback(std::move(inputting));
+    return;
+  }
+  if (!pressedTwice) {
+    // Nothing was typed by mistake; the next ESC clears everything.
+    lastKeyWasTrimmingEsc_ = true;
+    auto inputting = buildInputtingState();
+    stateCallback(std::make_unique<InputStates::Inputting>(
+        inputting->composingBuffer, inputting->cursorIndex,
+        localizedStrings_->pressEscAgainToClearAll()));
+    return;
+  }
+  reset();
+  stateCallback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
 }
 
 bool KeyHandler::isEnglishWord(const std::string& text) const {

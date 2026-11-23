@@ -71,6 +71,9 @@ class PlainLocalizedStrings : public KeyHandler::LocalizedStrings {
     return "";
   }
   std::string markingNotAvailableInFontAnnotationMode() override { return ""; }
+  std::string pressEscAgainToClearAll() override {
+    return "Press Esc again to clear all";
+  }
 };
 
 // The keys typing the syllables one after another, with a space for the first
@@ -119,6 +122,7 @@ class KeyHandlerSmartTest : public ::testing::Test {
     keyHandler_->setSmartChineseEnglishSwitchEnabled(true);
     keyHandler_->setAutoSpaceBetweenChineseAndEnglish(true);
     keyHandler_->setFixEnglishWordCase(true);
+    keyHandler_->setEscTrimsMistypedText(true);
     useLayout(BopomofoKeyboardLayout::StandardLayout());
   }
 
@@ -173,6 +177,17 @@ class KeyHandlerSmartTest : public ::testing::Test {
     auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
     return inputting != nullptr ? inputting->composingBuffer : "";
   }
+
+  std::string tooltip() {
+    auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
+    return inputting != nullptr ? inputting->tooltip : "";
+  }
+
+  bool isEmptyState() {
+    return dynamic_cast<InputStates::Empty*>(state_.get()) != nullptr;
+  }
+
+  void pressEsc() { press(Key::asciiKey(Key::ESC)); }
 
   void restart() {
     keyHandler_->reset();
@@ -442,6 +457,117 @@ TEST_F(KeyHandlerSmartTest, BackspaceDeletingEnglishKeepsSpaceWhenSettingOff) {
     press(Key::asciiKey(Key::BACKSPACE));
   }
   EXPECT_EQ(composingBuffer(), "你好 ");
+}
+
+TEST_F(KeyHandlerSmartTest, EscTrimsGarbage) {
+  // 今天 then garbage letters that cannot be a word.
+  type(KeysForSyllables(BopomofoKeyboardLayout::StandardLayout(),
+                        {"ㄐㄧㄣ", "ㄊㄧㄢ"}));
+  type("Jqvx");
+  ASSERT_EQ(composingBuffer(), "今天 Jqvx");
+  ASSERT_TRUE(keyHandler_->isSmartEnglishMode());
+  pressEsc();
+  EXPECT_EQ(composingBuffer(), "今天");
+  EXPECT_EQ(tooltip(), "Press Esc again to clear all");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, EscKeepsWordPrefix) {
+  type("hellojkq");
+  ASSERT_EQ(composingBuffer(), "hellojkq");
+  ASSERT_TRUE(keyHandler_->isSmartEnglishMode());
+  pressEsc();
+  EXPECT_EQ(composingBuffer(), "hello");
+  // As with any key that is not a letter, Esc leaves the English mode first.
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, EscClearsUnfinishedReadingAndTrailing) {
+  // 下午 3 點 followed by an unfinished ㄒㄧ.
+  type(KeysForSyllables(BopomofoKeyboardLayout::StandardLayout(),
+                        {"ㄒㄧㄚˋ", "ㄨˇ"}));
+  type("3 ");
+  type(KeysForSyllables(BopomofoKeyboardLayout::StandardLayout(), {"ㄉㄧㄢˇ"}));
+  std::string before = composingBuffer();
+  type("vu");
+  ASSERT_NE(composingBuffer(), before);
+  pressEsc();
+  EXPECT_EQ(composingBuffer(), before);
+}
+
+TEST_F(KeyHandlerSmartTest, EscOnCleanTextOnlyHints) {
+  type(KeysForSyllables(BopomofoKeyboardLayout::StandardLayout(),
+                        {"ㄋㄧˇ", "ㄏㄠˇ"}));
+  std::string text = composingBuffer();
+  ASSERT_FALSE(text.empty());
+  pressEsc();
+  EXPECT_EQ(composingBuffer(), text);
+  EXPECT_EQ(tooltip(), "Press Esc again to clear all");
+  pressEsc();
+  EXPECT_TRUE(isEmptyState());
+  EXPECT_EQ(composingBuffer(), "");
+}
+
+TEST_F(KeyHandlerSmartTest, EscTwiceAfterTrimmingClearsAll) {
+  type("hellojkq");
+  pressEsc();
+  ASSERT_EQ(composingBuffer(), "hello");
+  pressEsc();
+  EXPECT_TRUE(isEmptyState());
+}
+
+TEST_F(KeyHandlerSmartTest, OtherKeyBreaksDoubleEsc) {
+  type("hellojkq");
+  pressEsc();
+  ASSERT_EQ(composingBuffer(), "hello");
+  press(Key::namedKey(Key::KeyName::LEFT));
+  press(Key::namedKey(Key::KeyName::RIGHT));
+  pressEsc();
+  EXPECT_FALSE(isEmptyState());
+  EXPECT_EQ(composingBuffer(), "hello");
+  EXPECT_EQ(tooltip(), "Press Esc again to clear all");
+}
+
+TEST_F(KeyHandlerSmartTest, CandidateWindowKeyBreaksDoubleEsc) {
+  type("hellojkq");
+  pressEsc();
+  keyHandler_->breakEscDoublePress();
+  pressEsc();
+  EXPECT_FALSE(isEmptyState());
+}
+
+TEST_F(KeyHandlerSmartTest, EscOnlyBeforeCursor) {
+  type(KeysForSyllables(BopomofoKeyboardLayout::StandardLayout(),
+                        {"ㄋㄧˇ", "ㄏㄠˇ"}));
+  type("Jqvx");
+  std::string full = composingBuffer();
+  ASSERT_NE(full.find("Jqvx"), std::string::npos);
+  // Move the cursor to just after 你.
+  for (int i = 0; i < 4 + 1 + 1; i++) {
+    press(Key::namedKey(Key::KeyName::LEFT));
+  }
+  pressEsc();
+  // Nothing before the cursor but Chinese: only the hint, text unchanged.
+  EXPECT_EQ(composingBuffer(), full);
+  EXPECT_EQ(tooltip(), "Press Esc again to clear all");
+
+  // Garbage in the middle: delete only what is before the cursor.
+  restart();
+  type("Jqvx ");
+  type(KeysForSyllables(BopomofoKeyboardLayout::StandardLayout(),
+                        {"ㄋㄧˇ"}));
+  ASSERT_EQ(composingBuffer(), "Jqvx 你");
+  press(Key::namedKey(Key::KeyName::LEFT));
+  pressEsc();
+  EXPECT_EQ(composingBuffer(), "你");
+}
+
+TEST_F(KeyHandlerSmartTest, OldBehaviorWhenOptionOff) {
+  keyHandler_->setEscTrimsMistypedText(false);
+  keyHandler_->setEscKeyClearsEntireComposingBuffer(true);
+  type("hellojkq");
+  pressEsc();
+  EXPECT_TRUE(isEmptyState());
 }
 
 }  // namespace McBopomofo

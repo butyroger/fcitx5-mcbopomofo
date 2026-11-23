@@ -163,6 +163,15 @@ class KeyHandler {
   // Sets if the ESC key clears entire composing buffer.
   void setEscKeyClearsEntireComposingBuffer(bool flag);
 
+  // Sets if the ESC key removes only the mistyped text before the cursor, and
+  // pressing it twice clears everything. When on, it replaces the option
+  // above.
+  void setEscTrimsMistypedText(bool flag);
+
+  // A key handled outside of handle() (the candidate window) breaks a double
+  // press of the ESC key.
+  void breakEscDoublePress() { lastKeyWasTrimmingEsc_ = false; }
+
   // Keeps an invalid reading editable and clears its old tone when a new
   // Bopomofo component is entered.
   void setKeepInvalidSyllableForFurtherInput(bool flag);
@@ -358,6 +367,12 @@ class KeyHandler {
   // Whether the key may switch between Chinese and English.
   bool isSmartSwitchingAvailable(const Key& key) const;
   void setSmartEnglishMode(bool englishMode);
+  // Removes the mistyped text before the cursor (and the unfinished reading).
+  // Returns false if there is nothing to remove.
+  bool trimMistypedTextBeforeCursor();
+  // The ESC key in the Inputting state when it trims mistyped text.
+  void handleEscTrimmingMistypedText(bool pressedTwice,
+                                     const StateCallback& stateCallback);
   // The keys typed for the current reading.
   std::string rawKeysOfCurrentReading() const;
   // Puts the text into the composing buffer as is, one reading for each
@@ -399,6 +414,10 @@ class KeyHandler {
   // turned into English as typed.
   std::string rawKeysOfReading_;
   bool smartEnglishMode_ = false;
+  bool escTrimsMistypedText_ = false;
+  // The last key was an ESC that removed mistyped text or only showed the
+  // hint, so another ESC clears everything.
+  bool lastKeyWasTrimmingEsc_ = false;
   // Only digits have been typed in the English mode, so a space only leaves
   // the mode, like "2026年".
   bool smartEnglishDigitsOnly_ = false;
@@ -466,6 +485,8 @@ class KeyHandler {
     // Reference string: "cannot add new phrases when Bopomofo annotation is
     // on"
     virtual std::string markingNotAvailableInFontAnnotationMode() = 0;
+    // Reference string: "Press Esc again to clear all"
+    virtual std::string pressEscAgainToClearAll() = 0;
   };
 };
 

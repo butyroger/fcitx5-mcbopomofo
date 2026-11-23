@@ -398,6 +398,10 @@ class KeyHandlerLocalizedString : public KeyHandler::LocalizedStrings {
     }
   }
 
+  std::string pressEscAgainToClearAll() override {
+    return _("Press Esc again to clear all");
+  }
+
   std::string markingNotAvailableInFontAnnotationMode() override {
     return _("cannot add new phrases when Bopomofo annotation is on");
   }
@@ -844,6 +848,7 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
       config_.moveCursorAfterSelection.value());
   keyHandler_->setEscKeyClearsEntireComposingBuffer(
       config_.escKeyClearsEntireComposingBuffer.value());
+  keyHandler_->setEscTrimsMistypedText(config_.escTrimsMistypedText.value());
   keyHandler_->setKeepInvalidSyllableForFurtherInput(
       config_.keepInvalidSyllableForFurtherInput.value());
   keyHandler_->setPutLowercaseLettersToComposingBuffer(
@@ -1026,6 +1031,7 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
       return;
     }
 
+    keyHandler_->breakEscDoublePress();
     bool handled = handleCandidateKeyEvent(
         context, key, origKey, maybeCandidateList,
         [this, context](std::unique_ptr<InputState> next) {

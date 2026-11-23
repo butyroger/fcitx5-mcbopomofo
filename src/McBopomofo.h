@@ -154,6 +154,12 @@ FCITX_CONFIGURATION(
         this, "EscKeyClearsEntireComposingBuffer",
         _("ESC key clears entire composing buffer"), true};
 
+    // ESC removes only the mistyped text before the cursor; pressing it twice
+    // clears everything. When on, it replaces the option above.
+    fcitx::Option<bool> escTrimsMistypedText{
+        this, "EscTrimsMistypedText",
+        _("ESC key removes only mistyped text at the end"), true};
+
     // Keep an uncomposable reading editable; a new Bopomofo component replaces
     // its existing tone marker so the user can continue the reading.
     fcitx::Option<bool> keepInvalidSyllableForFurtherInput{

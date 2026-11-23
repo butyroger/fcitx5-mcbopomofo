@@ -109,6 +109,10 @@ class MockLocalizedString : public KeyHandler::LocalizedStrings {
   std::string markingNotAvailableInFontAnnotationMode() override {
     return "Cannot add new phrases when Bopomofo annotation is on";
   }
+
+  std::string pressEscAgainToClearAll() override {
+    return "Press Esc again to clear all";
+  }
 };
 
 class KeyHandlerTest : public ::testing::Test {

@@ -490,3 +490,11 @@ msgstr ""
 #: org.fcitx.Fcitx5.Addon.McBopomofo.metainfo.xml.in:10
 msgid "The McBopomofo Authors"
 msgstr ""
+
+#: src/McBopomofo.h:158
+msgid "ESC key removes only mistyped text at the end"
+msgstr ""
+
+#: src/McBopomofo.cpp:402
+msgid "Press Esc again to clear all"
+msgstr ""
