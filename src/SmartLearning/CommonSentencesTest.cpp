@@ -428,5 +428,132 @@ TEST_F(CommonSentencesTest, SwitchingFoldersKeepsOwnSentencesInTheOldOne) {
   EXPECT_FALSE(store->entry(kSentence).has_value());
 }
 
+// MARK: - Vocabulary manager
+
+std::string removedLine(const std::string& sentence, double time) {
+  return "sentence\t" + sentence + "\t" +
+         std::to_string(static_cast<long long>(time)) + "\n";
+}
+
+TEST_F(CommonSentencesTest, AllEntriesListsTheLiveOnesMostUsedFirst) {
+  writeFile(ownFile(), line("一二三四五六", 2, kNow - 10) +
+                           line("七六五四三二", 5, kNow - 20) +
+                           line("東南西北中發", 1, kNow - 400 * kDay, true) +
+                           line("甲乙丙丁戊己", 3, kNow - 100 * kDay) +
+                           line("子丑寅卯辰巳", 9, kNow - 30));
+  writeFile(sentences_ / "AAAA0002-laptop.txt",
+            line("一二三四五六", 1, kNow - 5) + line("明天見面再聊吧", 5, kNow));
+  writeFile(learning_ / "removed.txt", removedLine("子丑寅卯辰巳", kNow - 30));
+  auto store = loadedStore();
+  store->setEnabled(false);  // listed even when turned off
+  auto entries = store->allEntries();
+  ASSERT_EQ(entries.size(), 4U);
+  EXPECT_EQ(entries[0].sentence, "明天見面再聊吧");  // 5, newer
+  EXPECT_EQ(entries[1].sentence, "七六五四三二");    // 5, older
+  EXPECT_EQ(entries[2].sentence, "一二三四五六");    // 2 + 1
+  EXPECT_EQ(entries[2].entry.count, 3);
+  EXPECT_EQ(entries[2].entry.lastUsed, kNow - 5);
+  EXPECT_EQ(entries[3].sentence, "東南西北中發");
+  EXPECT_TRUE(entries[3].entry.pinned);
+}
+
+TEST_F(CommonSentencesTest, AddPinsAndRemembersAtOnce) {
+  writeFile(ownFile(), line("明天見面再聊吧", 5, kNow - 100));
+  writeFile(learning_ / "removed.txt",
+            removedLine(kSentence, kNow - 50) +
+                removedLine("一二三四五六", kNow - 50));
+  auto store = loadedStore();
+  now_ += 1;
+  EXPECT_FALSE(store->add("太短了"));
+  EXPECT_FALSE(store->add("有標點，不行的句子"));
+  ASSERT_TRUE(store->add(kSentence));
+  ASSERT_TRUE(store->add("明天見面再聊吧"));
+  EXPECT_EQ(readFile(ownFile()), line("明天見面再聊吧", 5, now_, true) +
+                                     line(kSentence, 3, now_, true));
+  EXPECT_EQ(readFile(learning_ / "removed.txt"),
+            removedLine("一二三四五六", kNow - 50));
+  EXPECT_EQ(store->completion("謝謝"), "您的耐心等候");
+  EXPECT_FALSE(store->hasUnsavedChanges());
+}
+
+TEST_F(CommonSentencesTest, RemoveRecordsTheRemovalAndForgetsTheOwnCount) {
+  writeFile(ownFile(),
+            line(kSentence, 4, kNow - 100) + line("明天見面再聊吧", 3, kNow));
+  writeFile(sentences_ / "AAAA0002-laptop.txt", line(kSentence, 2, kNow - 90));
+  auto store = loadedStore();
+  now_ += 10;
+  ASSERT_TRUE(store->remove(kSentence));
+  EXPECT_EQ(readFile(ownFile()), line("明天見面再聊吧", 3, kNow));
+  EXPECT_EQ(readFile(learning_ / "removed.txt"), removedLine(kSentence, now_));
+  EXPECT_EQ(readFile(sentences_ / "AAAA0002-laptop.txt"),
+            line(kSentence, 2, kNow - 90));
+  EXPECT_EQ(store->allEntries().size(), 1U);
+  EXPECT_EQ(store->completion("謝謝"), std::nullopt);
+
+  // Used again, it starts over from the other device's count.
+  now_ += 1;
+  store->record(kSentence);
+  EXPECT_EQ(store->entry(kSentence)->count, 3);
+}
+
+TEST_F(CommonSentencesTest, ManagementWritesNothingWhilePending) {
+  fs::remove_all(root_);
+  auto store = loadedStore();
+  ASSERT_TRUE(store->isLocalFilePending());
+  EXPECT_FALSE(store->add(kSentence));
+  EXPECT_FALSE(store->remove(kSentence));
+  EXPECT_FALSE(fs::exists(root_));
+  EXPECT_TRUE(store->allEntries().empty());
+}
+
+TEST_F(CommonSentencesTest, ASentenceRemovedByAnotherProgramStartsOver) {
+  writeFile(ownFile(), line(kSentence, 3, kNow - 100));
+  auto ime = loadedStore();
+  auto manager = loadedStore();
+  now_ += 10;
+  ASSERT_TRUE(manager->remove(kSentence));
+
+  // The input method is told to check its files again, then the sentence is
+  // used again: its count starts from 1.
+  ime->reload();
+  EXPECT_EQ(ime->completion("謝謝"), std::nullopt);
+  now_ += 1;
+  ime->record(kSentence);
+  EXPECT_EQ(ime->entry(kSentence)->count, 1);
+  ASSERT_TRUE(ime->save());
+  EXPECT_EQ(readFile(ownFile()), line(kSentence, 1, now_));
+}
+
+TEST_F(CommonSentencesTest, ASentenceAddedByAnotherProgramSurvivesTheNextSave) {
+  writeFile(ownFile(), line(kSentence, 1, kNow - 100));
+  auto ime = loadedStore();
+  auto manager = loadedStore();
+  now_ += 10;
+  ASSERT_TRUE(manager->add("明天見面再聊吧"));
+  const double added = now_;
+
+  // The input method saves what it recorded since, without having reloaded.
+  now_ += 1;
+  ime->record(kSentence);
+  ASSERT_TRUE(ime->save());
+  EXPECT_EQ(readFile(ownFile()), line("明天見面再聊吧", 3, added, true) +
+                                     line(kSentence, 2, now_));
+  EXPECT_EQ(ime->completion("明天"), "見面再聊吧");
+
+  // Counts take the larger, the later time wins and pinned stays. (A file
+  // of the same size written within the same clock tick would be taken as
+  // unchanged.)
+  writeFile(ownFile(), line(kSentence, 1, kNow - 200) +
+                           line("明天見面再聊吧", 17, kNow - 200));
+  now_ = kNow + 120;
+  ime->reloadIfNeeded();
+  auto entry = ime->entry("明天見面再聊吧");
+  ASSERT_TRUE(entry.has_value());
+  EXPECT_EQ(entry->count, 17);
+  EXPECT_EQ(entry->lastUsed, added);
+  EXPECT_TRUE(entry->pinned);
+  EXPECT_EQ(ime->entry(kSentence)->count, 2);
+}
+
 }  // namespace
 }  // namespace McBopomofo::SmartLearning

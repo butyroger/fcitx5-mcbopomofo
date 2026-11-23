@@ -47,14 +47,21 @@ std::vector<std::string> SplitSentences(std::string_view committed);
 // lifetime()) is not suggested, and is dropped from the own file on saving,
 // unless the user added it.
 //
-// The own file is read only once, and is never written before it has been
-// read: until then (the user data folder does not exist yet, or the file
-// cannot be read) the store is pending, and what is recorded meanwhile is
-// added to the file's sentences once it loads. A missing "sentences" folder
-// in an existing user data folder is an empty own file; saving creates it.
+// The own file is never written before it has been read: until then (the
+// user data folder does not exist yet, or the file cannot be read) the store
+// is pending, and what is recorded meanwhile is added to the file's sentences
+// once it loads. A missing "sentences" folder in an existing user data folder
+// is an empty own file; saving creates it. Another program (the vocabulary
+// manager) may write the own file too: when its stamp changed, it is read
+// again before reloading and before saving, and each sentence keeps the
+// larger count, the later time and stays added by the user if either says
+// so. A sentence missing from the file is not taken as removed; the own
+// sentences removed in "removed.txt" at or after their last use are dropped
+// instead.
 //
 // Recording and looking up only use memory; the files are read by
-// setLearningFolder(), reload() and reloadIfNeeded(), and written by save().
+// setLearningFolder(), reload(), reloadIfNeeded() and the vocabulary manager
+// functions, and written by save() and the vocabulary manager functions.
 class CommonSentenceStore {
  public:
   static constexpr long long kThreshold = 3;
@@ -68,6 +75,11 @@ class CommonSentenceStore {
     double lastUsed = 0;
     // Added by the user, which is never forgotten.
     bool pinned = false;
+  };
+
+  struct SentenceEntry {
+    std::string sentence;
+    Entry entry;
   };
 
   // How long a sentence is kept without being used: 90 days, and 30 more for
@@ -103,14 +115,34 @@ class CommonSentenceStore {
   // wins, then the one used last.
   std::optional<std::string> completion(std::string_view typedHead);
 
-  // Loads the own file if still pending, then merges the other devices' files
-  // again.
+  // Loads the own file if still pending, reads it again if another program
+  // changed it, then merges the other devices' files again.
   void reload();
 
   // Reloads if the files were last read kReloadInterval seconds ago or more
-  // and the other devices' files (name, modification time, size) changed
-  // since, or the own file is still pending.
+  // and the other devices' files (name, modification time, size) or the own
+  // file changed since, or the own file is still pending.
   void reloadIfNeeded();
+
+  // For the vocabulary manager, whether or not the store is enabled: the
+  // sentences of all the devices that are neither removed nor past their
+  // lifetime, remembered or not yet, read again now. The most used first,
+  // then the one used last.
+  std::vector<SentenceEntry> allEntries();
+
+  // Adds a valid sentence (see IsValidSentence) by the user: takes it out of
+  // "removed.txt", and makes it added by the user, used now and at least
+  // kThreshold times, then saves. Returns false, changing nothing, for an
+  // invalid sentence, while the own file is pending, or if "removed.txt"
+  // cannot be read or written; false also if the own file cannot be written.
+  bool add(const std::string& sentence);
+
+  // Removes a sentence: records it in "removed.txt", which hides it on all
+  // the devices until it is used again, takes it out of the own file and
+  // saves. The other devices' files are left as they are. Returns false,
+  // changing nothing, while the own file is pending, or if "removed.txt"
+  // cannot be read or written; false also if the own file cannot be written.
+  bool remove(const std::string& sentence);
 
   // Writes the own sentences to the own file atomically, leaving out those
   // past their lifetime. Returns false, writing nothing, while the own file
@@ -129,6 +161,11 @@ class CommonSentenceStore {
 
   // Returns true if the own file was loaded (or found absent) by this call.
   bool loadLocalFileIfNeeded();
+  // Returns false if the own file could not be loaded.
+  bool ensureLocalFileLoaded();
+  // Merges the own file if another program changed it.
+  FileChange mergeLocalFileIfChanged();
+  void dropRemovedLocalSentences();
   Snapshot takeSnapshot() const;
   void merge();
   bool isAlive(const std::string& sentence, const Entry& entry, double now);
@@ -148,6 +185,8 @@ class CommonSentenceStore {
   double lastLoaded_ = 0;
   // The other devices' files as they were last merged.
   Snapshot snapshot_;
+  // The own file as it was last read or written here.
+  FileStamp localStamp_;
 
   // The sentences of this device, and of all the devices.
   std::map<std::string, Entry> localEntries_;

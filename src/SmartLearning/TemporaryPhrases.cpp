@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <charconv>
 #include <cstdio>
-#include <optional>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -113,6 +112,11 @@ void TemporaryPhraseStore::setLearningFolder(fs::path learningFolder) {
 
 void TemporaryPhraseStore::reload() {
   loadLocalFileIfNeeded();
+  if (hasFolder_) {
+    // Read the removed entries now rather than after their reload interval.
+    removedEntries_->reloadIfChanged();
+  }
+  mergeLocalFileIfChanged();
   merge();
 }
 
@@ -120,16 +124,7 @@ bool TemporaryPhraseStore::reloadIfChanged() {
   if (!hasFolder_) {
     return false;
   }
-  Snapshot snapshot = takeSnapshot();
-  if (snapshot != snapshot_) {
-    auto removedStamp = [](const Snapshot& s) {
-      auto it = s.find(kRemovedSnapshotKey);
-      return it == s.end() ? std::optional<FileStamp>() : it->second;
-    };
-    if (removedStamp(snapshot) != removedStamp(snapshot_)) {
-      // Read the removed entries now rather than after their reload interval.
-      removedEntries_->reload();
-    }
+  if (takeSnapshot() != snapshot_) {
     reload();
     return true;
   }
@@ -209,6 +204,17 @@ bool TemporaryPhraseStore::save() {
     }
     merge();
   }
+  // Nor what another program wrote to it since.
+  switch (mergeLocalFileIfChanged()) {
+    case FileChange::kUnreadable:
+      return false;
+    case FileChange::kChanged:
+      removedEntries_->reloadIfChanged();
+      merge();
+      break;
+    case FileChange::kUnchanged:
+      break;
+  }
 
   std::string content;
   for (const auto& [key, time] : localPhrases_) {
@@ -235,8 +241,46 @@ bool TemporaryPhraseStore::save() {
     return false;
   }
   unsavedChanges_ = false;
+  localStamp_ = stampOf(ownFilePath());
   recordOwnFileInSnapshot();
   return true;
+}
+
+std::vector<TemporaryPhraseStore::TimedPhrase>
+TemporaryPhraseStore::allPhrases() {
+  reload();
+  std::vector<TimedPhrase> result;
+  result.reserve(phrases_.size());
+  for (const auto& [key, time] : phrases_) {
+    size_t space = key.find(' ');
+    result.push_back({key.substr(0, space), key.substr(space + 1), time});
+  }
+  std::sort(result.begin(), result.end(),
+            [](const TimedPhrase& a, const TimedPhrase& b) {
+              if (a.time != b.time) {
+                return a.time > b.time;
+              }
+              return a.value != b.value ? a.value < b.value
+                                        : a.reading < b.reading;
+            });
+  return result;
+}
+
+bool TemporaryPhraseStore::forget(const std::string& value,
+                                  const std::string& reading) {
+  if (!ensureLocalFileLoaded()) {
+    return false;
+  }
+  const std::string key = phraseKey(value, reading);
+  // Recorded first, so that the phrase is not brought back from the own file
+  // if another program wrote it meanwhile.
+  if (!removedEntries_->add(RemovedEntries::kTemporary, key, wallNow_())) {
+    return false;
+  }
+  localPhrases_.erase(key);
+  phrases_.erase(key);
+  unsavedChanges_ = true;
+  return save();
 }
 
 bool TemporaryPhraseStore::loadLocalFileIfNeeded() {
@@ -273,6 +317,8 @@ bool TemporaryPhraseStore::loadLocalFileIfNeeded() {
     }
   }
 
+  // Taken before reading, so that a change made meanwhile is read again.
+  const FileStamp stamp = stampOf(path);
   if (fs::exists(fs::symlink_status(path, ec))) {
     auto content = readWholeFile(path);
     if (!content) {
@@ -291,8 +337,34 @@ bool TemporaryPhraseStore::loadLocalFileIfNeeded() {
     }
   }
   removedWhilePending_.clear();
+  localStamp_ = stamp;
   localFilePending_ = false;
   return true;
+}
+
+bool TemporaryPhraseStore::ensureLocalFileLoaded() {
+  if (!hasFolder_) {
+    return false;
+  }
+  return !localFilePending_ || loadLocalFileIfNeeded();
+}
+
+FileChange TemporaryPhraseStore::mergeLocalFileIfChanged() {
+  if (!hasFolder_ || localFilePending_) {
+    return FileChange::kUnchanged;
+  }
+  std::string content;
+  FileChange change = readIfChanged(ownFilePath(), &localStamp_, &content);
+  if (change == FileChange::kChanged) {
+    // The later time wins.
+    for (const auto& [key, time] : parsePhrases(content, wallNow_())) {
+      auto it = localPhrases_.find(key);
+      if (it == localPhrases_.end() || it->second < time) {
+        localPhrases_[key] = time;
+      }
+    }
+  }
+  return change;
 }
 
 void TemporaryPhraseStore::merge() {

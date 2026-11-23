@@ -7,6 +7,8 @@
 #include <string_view>
 #include <unordered_map>
 
+#include "AtomicFile.h"
+
 namespace McBopomofo::SmartLearning {
 
 // The entries the user removed from the learned data, kept in "removed.txt"
@@ -14,8 +16,9 @@ namespace McBopomofo::SmartLearning {
 // device does not bring back what another one removed. Each line is the
 // kind, a tab, the key, a tab, and the time (Unix seconds) of the removal.
 //
-// This class only reads the file; it is read again at most once every
-// kReloadInterval seconds.
+// Lookups read the file again at most once every kReloadInterval seconds.
+// add() and remove() read it again first, then write it whole, atomically,
+// sorted by line and with the times in whole seconds.
 class RemovedEntries {
  public:
   static constexpr char kEnglish[] = "english";
@@ -38,8 +41,30 @@ class RemovedEntries {
   // Reads the file again now, for example after it was seen to change.
   void reload();
 
+  // Reads the file again if it changed (whether it exists, its modification
+  // time or its size) since it was last read or written here. Returns true if
+  // it was read again.
+  bool reloadIfChanged();
+
+  // Records the removal of the entry at |wallNow| (Unix seconds), replacing
+  // an earlier one. Returns false, writing nothing, when there is no folder,
+  // the key or kind holds a tab or a line break, the file exists but cannot
+  // be read, the user data folder holding the learning folder is missing, or
+  // the write fails.
+  bool add(std::string_view kind, std::string_view key, double wallNow);
+
+  // Takes the entry out. Returns true if it was taken out, or was not there
+  // (nothing is written then); false if the file exists but cannot be read
+  // or the write fails.
+  bool remove(std::string_view kind, std::string_view key);
+
  private:
   void loadIfNeeded();
+  // Reads the entries of the file into |entries|; false if the file exists
+  // but cannot be read.
+  bool readFile(std::unordered_map<std::string, double>* entries,
+                FileStamp* stamp) const;
+  bool writeFile(std::unordered_map<std::string, double> entries);
 
   std::function<double()> now_;
   std::filesystem::path learningFolder_;
@@ -47,6 +72,8 @@ class RemovedEntries {
   double lastLoaded_ = 0;
   // "<kind>\t<key>" to the time.
   std::unordered_map<std::string, double> entries_;
+  // The file as it was last read or written.
+  FileStamp stamp_;
 };
 
 }  // namespace McBopomofo::SmartLearning

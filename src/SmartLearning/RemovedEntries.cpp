@@ -1,11 +1,14 @@
 #include "RemovedEntries.h"
 
+#include <algorithm>
 #include <optional>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "AtomicFile.h"
 #include "LearningFileUtils.h"
+#include "LearningPaths.h"
 
 namespace McBopomofo::SmartLearning {
 namespace fs = std::filesystem;
@@ -53,33 +56,128 @@ void RemovedEntries::loadIfNeeded() {
 
 void RemovedEntries::reload() {
   std::unordered_map<std::string, double> entries;
-  if (!learningFolder_.empty()) {
-    if (auto content = readWholeFile(learningFolder_ / kRemovedFilename)) {
-      std::string_view rest(*content);
-      while (!rest.empty()) {
-        size_t end = rest.find('\n');
-        std::string_view line = rest.substr(0, end);
-        rest = end == std::string_view::npos ? std::string_view()
-                                             : rest.substr(end + 1);
-        // Exactly three columns, empty ones included.
-        size_t firstTab = line.find('\t');
-        if (firstTab == std::string_view::npos) {
-          continue;
-        }
-        size_t secondTab = line.find('\t', firstTab + 1);
-        if (secondTab == std::string_view::npos ||
-            line.find('\t', secondTab + 1) != std::string_view::npos) {
-          continue;
-        }
-        if (auto time = parseNumber(line.substr(secondTab + 1))) {
-          entries[std::string(line.substr(0, secondTab))] = *time;
-        }
-      }
-    }
-  }
+  FileStamp stamp;
+  // A file that cannot be read gives no entries.
+  readFile(&entries, &stamp);
   entries_ = std::move(entries);
+  stamp_ = stamp;
   loaded_ = true;
   lastLoaded_ = now_();
+}
+
+bool RemovedEntries::reloadIfChanged() {
+  if (learningFolder_.empty()) {
+    return false;
+  }
+  if (loaded_ && stampOf(learningFolder_ / kRemovedFilename) == stamp_) {
+    return false;
+  }
+  reload();
+  return true;
+}
+
+bool RemovedEntries::add(std::string_view kind, std::string_view key,
+                         double wallNow) {
+  // A tab or a line break would break the line format of the file.
+  if (learningFolder_.empty() ||
+      kind.find_first_of("\t\n") != std::string_view::npos ||
+      key.find_first_of("\t\n") != std::string_view::npos) {
+    return false;
+  }
+  std::unordered_map<std::string, double> entries;
+  FileStamp stamp;
+  if (!readFile(&entries, &stamp)) {
+    return false;
+  }
+  entries[entryKey(kind, key)] = wallNow;
+  return writeFile(std::move(entries));
+}
+
+bool RemovedEntries::remove(std::string_view kind, std::string_view key) {
+  if (learningFolder_.empty()) {
+    return false;
+  }
+  std::unordered_map<std::string, double> entries;
+  FileStamp stamp;
+  if (!readFile(&entries, &stamp)) {
+    return false;
+  }
+  if (entries.erase(entryKey(kind, key)) == 0) {
+    entries_ = std::move(entries);
+    stamp_ = stamp;
+    loaded_ = true;
+    lastLoaded_ = now_();
+    return true;
+  }
+  return writeFile(std::move(entries));
+}
+
+bool RemovedEntries::readFile(std::unordered_map<std::string, double>* entries,
+                              FileStamp* stamp) const {
+  entries->clear();
+  *stamp = FileStamp();
+  if (learningFolder_.empty()) {
+    return true;
+  }
+  const fs::path path = learningFolder_ / kRemovedFilename;
+  // Taken before reading, so that a change made meanwhile is read again.
+  *stamp = stampOf(path);
+  std::error_code ec;
+  if (!fs::exists(fs::symlink_status(path, ec))) {
+    return true;
+  }
+  auto content = readWholeFile(path);
+  if (!content) {
+    return false;
+  }
+  for (std::string_view line : split(*content, '\n', /*keepEmpty=*/false)) {
+    // Exactly three columns, empty ones included.
+    auto parts = split(line, '\t', /*keepEmpty=*/true);
+    if (parts.size() != 3) {
+      continue;
+    }
+    if (auto time = parseNumber(parts[2])) {
+      (*entries)[entryKey(parts[0], parts[1])] = *time;
+    }
+  }
+  return true;
+}
+
+bool RemovedEntries::writeFile(
+    std::unordered_map<std::string, double> entries) {
+  std::vector<std::string> lines;
+  lines.reserve(entries.size());
+  for (const auto& [key, time] : entries) {
+    lines.push_back(key + "\t" + std::to_string(static_cast<long long>(time)) +
+                    "\n");
+  }
+  std::sort(lines.begin(), lines.end());
+  std::string content;
+  for (const auto& line : lines) {
+    content += line;
+  }
+
+  // Create learning/ when it is missing, but never the user data folder
+  // itself: a missing one may be a sync folder that is not mounted.
+  if (learningFolderState(learningFolder_, 1) ==
+      LearningFolderState::kUnavailable) {
+    return false;
+  }
+  std::error_code ec;
+  fs::create_directories(learningFolder_, ec);
+  if (ec) {
+    return false;
+  }
+  const fs::path path = learningFolder_ / kRemovedFilename;
+  if (!writeFileAtomically(path, content)) {
+    return false;
+  }
+  // The exact times are kept in memory; the file holds whole seconds.
+  entries_ = std::move(entries);
+  stamp_ = stampOf(path);
+  loaded_ = true;
+  lastLoaded_ = now_();
+  return true;
 }
 
 }  // namespace McBopomofo::SmartLearning

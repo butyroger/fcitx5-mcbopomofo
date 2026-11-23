@@ -949,6 +949,21 @@ void McBopomofoEngine::reloadConfig() {
   fcitx::readAsIni(config_, kConfigPath);
   applyUserDataFolder();
   applySmartOptions();
+  // The vocabulary manager asks for this after writing the learned data.
+  recheckLearningFiles();
+}
+
+void McBopomofoEngine::recheckLearningFiles() {
+  // The constructor reads the config before the stores exist.
+  if (!removedEntries_) {
+    return;
+  }
+  removedEntries_->reloadIfChanged();
+  userOverrideStore_->reloadIfChanged();
+  englishWordStore_->reload();
+  commonSentenceStore_->reload();
+  temporaryPhraseStore_->reload();
+  applyTemporaryPhrases();
 }
 
 void McBopomofoEngine::applySmartOptions() {
@@ -1140,6 +1155,12 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   }
 
   userOverrideStore_->reloadIfChanged();
+  // A removal made by the vocabulary manager or on another device applies at
+  // once, rather than after the reload interval of the stores.
+  if (removedEntries_->reloadIfChanged()) {
+    englishWordStore_->reload();
+    commonSentenceStore_->reload();
+  }
   // Also drops the temporary phrases in Plain Bopomofo.
   temporaryPhraseStore_->reloadIfChanged();
   applyTemporaryPhrases();

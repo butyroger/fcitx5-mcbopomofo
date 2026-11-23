@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "AtomicFile.h"
 #include "RemovedEntries.h"
 
 namespace McBopomofo::SmartLearning {
@@ -62,22 +63,35 @@ inline constexpr char kDefaultEnglishWordList[] =
 // added on reading, at most once a minute. Words the user removed (the
 // "english" entries of "removed.txt" in the learning folder) are left out.
 //
-// The own file is read only once, and is never written before it has been
-// read: until then (the "english" folder does not exist yet, or the file
-// cannot be read) the store is pending, and the words recorded meanwhile are
-// added to the file's counts once it loads.
+// The own file is never written before it has been read: until then (the
+// "english" folder does not exist yet, or the file cannot be read) the store
+// is pending, and the words recorded meanwhile are added to the file's counts
+// once it loads. Another program (the vocabulary manager) may write the own
+// file too: when its stamp changed, it is read again before reloading and
+// before saving, and each word keeps the larger count. A word missing from
+// the file is not taken as removed; the own words in "removed.txt" are
+// dropped instead.
 class EnglishWordStore {
  public:
   static constexpr size_t kMinimumLength = 3;
   static constexpr double kReloadInterval = 60;  // seconds
   static constexpr size_t kMaximumCompletions = 20;
+  // The count of a word added by the user.
+  static constexpr long long kAddedCount = 2;
+
+  struct WordCount {
+    std::string word;
+    long long count = 0;
+  };
 
   // Without |removedEntries|, the store reads "removed.txt" with its own
-  // reader, using |now|.
+  // reader, using |now|. |wallNow| gives the Unix time in seconds of a
+  // removal written to "removed.txt"; without it, the system clock.
   EnglishWordStore(std::string deviceID, std::string deviceName,
                    std::shared_ptr<const EnglishLexicon> lexicon,
                    std::function<double()> now,
-                   std::shared_ptr<RemovedEntries> removedEntries = nullptr);
+                   std::shared_ptr<RemovedEntries> removedEntries = nullptr,
+                   std::function<double()> wallNow = nullptr);
 
   // Uses "<learningFolder>/english" and "<learningFolder>/removed.txt". An
   // empty or relative path is ignored. Setting the current folder again only
@@ -123,9 +137,35 @@ class EnglishWordStore {
 
   [[nodiscard]] bool isLocalFilePending() const { return localFilePending_; }
 
+  // Loads the own file if still pending, reads it again if another program
+  // changed it, and merges the other devices' files again.
+  void reload();
+
+  // For the vocabulary manager: the words of all the devices with their
+  // counts added, read again now, without the removed ones, sorted by the
+  // lowercase word.
+  std::vector<WordCount> allWords();
+
+  // Adds a word by the user: takes it out of "removed.txt", makes its own
+  // count at least kAddedCount, and saves. Returns false, changing nothing,
+  // while the own file is pending, or if "removed.txt" cannot be read or
+  // written; false also if the own file cannot be written.
+  bool add(const std::string& word);
+
+  // Removes a word: records it in "removed.txt", which hides it on all the
+  // devices, takes it out of the own file and saves. The other devices'
+  // files are left as they are. Returns false, changing nothing, while the
+  // own file is pending, or if "removed.txt" cannot be read or written; false
+  // also if the own file cannot be written.
+  bool remove(const std::string& word);
+
  private:
   void loadIfNeeded();
-  void reload();
+  // Returns false if the own file could not be loaded.
+  bool ensureLocalFileLoaded();
+  // Merges the own file if another program changed it.
+  FileChange mergeLocalFileIfChanged();
+  void dropRemovedLocalWords();
   // Returns true if the own file was loaded (or found absent) by this call.
   bool loadLocalFileIfNeeded();
   std::filesystem::path englishFolder() const;
@@ -136,6 +176,7 @@ class EnglishWordStore {
   std::shared_ptr<const EnglishLexicon> lexicon_;
   std::function<double()> now_;
   std::shared_ptr<RemovedEntries> removedEntries_;
+  std::function<double()> wallNow_;
 
   std::filesystem::path learningFolder_;
   bool hasFolder_ = false;
@@ -143,6 +184,8 @@ class EnglishWordStore {
   bool unsavedChanges_ = false;
   bool loaded_ = false;
   double lastLoaded_ = 0;
+  // The own file as it was last read or written here.
+  FileStamp localStamp_;
 
   // The counts of the words typed on this device, and on all devices.
   std::map<std::string, long long> localCounts_;

@@ -363,6 +363,12 @@ std::optional<std::string> CommonSentenceStore::completion(
 
 void CommonSentenceStore::reload() {
   loadLocalFileIfNeeded();
+  if (hasFolder_) {
+    // Another program may have removed or added a sentence.
+    removedEntries_->reloadIfChanged();
+  }
+  mergeLocalFileIfChanged();
+  dropRemovedLocalSentences();
   merge();
 }
 
@@ -372,9 +378,10 @@ void CommonSentenceStore::reloadIfNeeded() {
   if (now >= lastLoaded_ && now - lastLoaded_ < kReloadInterval) {
     return;
   }
-  if (!localFilePending_ && takeSnapshot() == snapshot_) {
-    // Nothing to read again: the own file is read only once, and the removed
-    // entries are looked up as the sentences are used.
+  if (!localFilePending_ && takeSnapshot() == snapshot_ &&
+      stampOf(ownFilePath()) == localStamp_) {
+    // Nothing to read again: the removed entries are looked up as the
+    // sentences are used.
     lastLoaded_ = now;
     return;
   }
@@ -398,6 +405,18 @@ bool CommonSentenceStore::save() {
       return false;
     }
     merge();
+  }
+  // Nor what another program wrote to it since.
+  switch (mergeLocalFileIfChanged()) {
+    case FileChange::kUnreadable:
+      return false;
+    case FileChange::kChanged:
+      removedEntries_->reloadIfChanged();
+      dropRemovedLocalSentences();
+      merge();
+      break;
+    case FileChange::kUnchanged:
+      break;
   }
 
   const double now = wallNow_();
@@ -431,8 +450,70 @@ bool CommonSentenceStore::save() {
   if (!writeFileAtomically(ownFilePath(), content)) {
     return false;
   }
+  localStamp_ = stampOf(ownFilePath());
   unsavedChanges_ = false;
   return true;
+}
+
+std::vector<CommonSentenceStore::SentenceEntry>
+CommonSentenceStore::allEntries() {
+  reload();
+  const double now = wallNow_();
+  std::vector<SentenceEntry> result;
+  for (const auto& [sentence, entry] : mergedEntries_) {
+    if (isAlive(sentence, entry, now)) {
+      result.push_back({sentence, entry});
+    }
+  }
+  std::sort(result.begin(), result.end(),
+            [](const SentenceEntry& a, const SentenceEntry& b) {
+              if (a.entry.count != b.entry.count) {
+                return a.entry.count > b.entry.count;
+              }
+              if (a.entry.lastUsed != b.entry.lastUsed) {
+                return a.entry.lastUsed > b.entry.lastUsed;
+              }
+              return a.sentence < b.sentence;
+            });
+  return result;
+}
+
+bool CommonSentenceStore::add(const std::string& sentence) {
+  if (!IsValidSentence(sentence) || !ensureLocalFileLoaded()) {
+    return false;
+  }
+  reload();
+  if (!removedEntries_->remove(RemovedEntries::kSentence, sentence)) {
+    return false;
+  }
+  const double now = wallNow_();
+  auto it = localEntries_.find(sentence);
+  Entry entry = it == localEntries_.end() ? Entry{0, now, true} : it->second;
+  entry.count = std::max(entry.count, kThreshold);
+  entry.lastUsed = now;
+  entry.pinned = true;
+  localEntries_[sentence] = entry;
+  unsavedChanges_ = true;
+  bool saved = save();
+  reload();
+  return saved;
+}
+
+bool CommonSentenceStore::remove(const std::string& sentence) {
+  if (!ensureLocalFileLoaded()) {
+    return false;
+  }
+  reload();
+  // Recorded first, so that the sentence is not brought back from the own
+  // file if another program wrote it meanwhile.
+  if (!removedEntries_->add(RemovedEntries::kSentence, sentence, wallNow_())) {
+    return false;
+  }
+  localEntries_.erase(sentence);
+  unsavedChanges_ = true;
+  bool saved = save();
+  reload();
+  return saved;
 }
 
 std::optional<CommonSentenceStore::Entry> CommonSentenceStore::entry(
@@ -477,6 +558,8 @@ bool CommonSentenceStore::loadLocalFileIfNeeded() {
     }
   }
 
+  // Taken before reading, so that a change made meanwhile is read again.
+  const FileStamp stamp = stampOf(path);
   if (fs::exists(fs::symlink_status(path, ec))) {
     auto content = readWholeFile(path);
     if (!content) {
@@ -493,8 +576,57 @@ bool CommonSentenceStore::loadLocalFileIfNeeded() {
       }
     }
   }
+  localStamp_ = stamp;
   localFilePending_ = false;
   return true;
+}
+
+bool CommonSentenceStore::ensureLocalFileLoaded() {
+  if (!hasFolder_) {
+    return false;
+  }
+  return !localFilePending_ || loadLocalFileIfNeeded();
+}
+
+FileChange CommonSentenceStore::mergeLocalFileIfChanged() {
+  if (!hasFolder_ || localFilePending_) {
+    return FileChange::kUnchanged;
+  }
+  std::string content;
+  FileChange change = readIfChanged(ownFilePath(), &localStamp_, &content);
+  if (change == FileChange::kChanged) {
+    // The same sentence written by both: the larger count, the later time,
+    // and added by the user if either says so.
+    for (const auto& [sentence, entry] : parseEntries(content)) {
+      auto it = localEntries_.find(sentence);
+      if (it == localEntries_.end()) {
+        localEntries_[sentence] = entry;
+        continue;
+      }
+      Entry& local = it->second;
+      local.count = std::max(local.count, entry.count);
+      local.lastUsed = std::max(local.lastUsed, entry.lastUsed);
+      local.pinned = local.pinned || entry.pinned;
+    }
+  }
+  return change;
+}
+
+void CommonSentenceStore::dropRemovedLocalSentences() {
+  if (!hasFolder_) {
+    return;
+  }
+  // Removed at or after the time it was last used, maybe by another program.
+  for (auto it = localEntries_.begin(); it != localEntries_.end();) {
+    // A time of 0 means the entry is not removed.
+    double removed =
+        removedEntries_->removedTime(RemovedEntries::kSentence, it->first);
+    if (removed != 0 && removed >= it->second.lastUsed) {
+      it = localEntries_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 void CommonSentenceStore::merge() {

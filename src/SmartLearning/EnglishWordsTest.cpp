@@ -52,7 +52,7 @@ class EnglishWordsTest : public ::testing::Test {
       std::vector<std::string> words = {}) {
     return std::make_unique<EnglishWordStore>(
         "TESTDEV1", "test", EnglishLexicon::fromWords(std::move(words)),
-        [this] { return now_; });
+        [this] { return now_; }, nullptr, [this] { return now_; });
   }
 
   fs::path ownFile() const { return english_ / "TESTDEV1-test.txt"; }
@@ -527,6 +527,116 @@ TEST_F(EnglishWordsTest, CompletionsPutWordsWithoutVowelsLast) {
   EXPECT_EQ(store->completions("ass"),
             (std::vector<std::string>{"assvm", "assay", "asset", "associate",
                                       "assn", "asst", "asstx"}));
+}
+
+// MARK: - Vocabulary manager
+
+TEST_F(EnglishWordsTest, AllWordsMergesDevicesSortedByLowercase) {
+  writeFile(ownFile(), "beta\t1\nZeta\t2\n");
+  writeFile(english_ / "TESTDEV2-other.txt", "beta\t3\nalpha\t1\ngone\t4\n");
+  writeFile(learning_ / "removed.txt", "english\tgone\t1\n");
+  auto store = makeStore();
+  store->setLearningFolder(learning_);
+  // Written elsewhere within the reload interval: listing reads it again.
+  writeFile(english_ / "TESTDEV3-third.txt", "delta\t2\n");
+  auto words = store->allWords();
+  ASSERT_EQ(words.size(), 4U);
+  EXPECT_EQ(words[0].word, "alpha");
+  EXPECT_EQ(words[1].word, "beta");
+  EXPECT_EQ(words[1].count, 4);
+  EXPECT_EQ(words[2].word, "delta");
+  EXPECT_EQ(words[3].word, "Zeta");
+}
+
+TEST_F(EnglishWordsTest, AddClearsTheRemovalAndCountsAtLeastTwo) {
+  writeFile(ownFile(), "zyxwv\t5\n");
+  writeFile(learning_ / "removed.txt",
+            "english\tqwert\t1\nenglish\tother\t1\n");
+  auto store = makeStore();
+  store->setLearningFolder(learning_);
+  ASSERT_TRUE(store->add("qwert"));
+  ASSERT_TRUE(store->add("zyxwv"));
+  EXPECT_EQ(readFile(ownFile()), "qwert\t2\nzyxwv\t5\n");
+  EXPECT_EQ(readFile(learning_ / "removed.txt"), "english\tother\t1\n");
+  EXPECT_TRUE(store->isWord("qwert"));
+  EXPECT_FALSE(store->hasUnsavedChanges());
+}
+
+TEST_F(EnglishWordsTest, RemoveRecordsTheRemovalAndDropsTheOwnCount) {
+  writeFile(ownFile(), "zyxwv\t5\nqwert\t3\n");
+  writeFile(english_ / "TESTDEV2-other.txt", "zyxwv\t4\n");
+  auto store = makeStore();
+  store->setLearningFolder(learning_);
+  now_ += 10;
+  ASSERT_TRUE(store->remove("zyxwv"));
+  EXPECT_EQ(readFile(ownFile()), "qwert\t3\n");
+  EXPECT_EQ(readFile(learning_ / "removed.txt"),
+            "english\tzyxwv\t" + std::to_string(static_cast<long long>(now_)) +
+                "\n");
+  // The other device's file is left as it is, and its count is hidden.
+  EXPECT_EQ(readFile(english_ / "TESTDEV2-other.txt"), "zyxwv\t4\n");
+  EXPECT_FALSE(store->isWord("zyxwv"));
+  EXPECT_EQ(store->allWords().size(), 1U);
+}
+
+TEST_F(EnglishWordsTest, ManagementWritesNothingWhilePending) {
+  const fs::path learning = root_ / "data" / "learning";
+  auto store = makeStore();
+  store->setLearningFolder(learning);
+  ASSERT_TRUE(store->isLocalFilePending());
+  EXPECT_FALSE(store->add("zyxwv"));
+  EXPECT_FALSE(store->remove("zyxwv"));
+  EXPECT_FALSE(fs::exists(root_ / "data"));
+  EXPECT_TRUE(store->allWords().empty());
+}
+
+TEST_F(EnglishWordsTest, AWordAddedByAnotherProgramSurvivesTheNextSave) {
+  fs::create_directories(english_);
+  auto ime = makeStore();
+  ime->setLearningFolder(learning_);
+  ime->record({"typedword"});
+  ASSERT_TRUE(ime->save());
+
+  auto manager = makeStore();
+  manager->setLearningFolder(learning_);
+  ASSERT_TRUE(manager->add("zyxwv"));
+
+  // The input method saves what it typed since, without having reloaded.
+  ime->record({"typedword", "another"});
+  ASSERT_TRUE(ime->save());
+  EXPECT_EQ(readFile(ownFile()), "another\t1\ntypedword\t2\nzyxwv\t2\n");
+  EXPECT_TRUE(ime->isWord("zyxwv"));
+
+  // And the manager sees what the input method typed.
+  EXPECT_EQ(manager->allWords().size(), 3U);
+}
+
+TEST_F(EnglishWordsTest, AWordRemovedByAnotherProgramStaysRemoved) {
+  writeFile(ownFile(), "typedword\t2\nzyxwv\t5\n");
+  auto ime = makeStore();
+  ime->setLearningFolder(learning_);
+  EXPECT_TRUE(ime->isWord("zyxwv"));
+
+  auto manager = makeStore();
+  manager->setLearningFolder(learning_);
+  now_ += 1;
+  ASSERT_TRUE(manager->remove("zyxwv"));
+
+  ime->record({"typedword"});
+  ASSERT_TRUE(ime->save());
+  EXPECT_EQ(readFile(ownFile()), "typedword\t3\n");
+  EXPECT_FALSE(ime->isWord("zyxwv"));
+}
+
+TEST_F(EnglishWordsTest, AChangedOwnFileThatCannotBeReadIsNotOverwritten) {
+  writeFile(ownFile(), "zyxwv\t5\n");
+  auto store = makeStore();
+  store->setLearningFolder(learning_);
+  store->record({"typedword"});
+  fs::remove(ownFile());
+  fs::create_directories(ownFile());  // a folder where the file should be
+  EXPECT_FALSE(store->save());
+  EXPECT_TRUE(fs::is_directory(ownFile()));
 }
 
 }  // namespace McBopomofo::SmartLearning

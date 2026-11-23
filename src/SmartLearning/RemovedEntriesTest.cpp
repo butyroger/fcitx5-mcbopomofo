@@ -5,6 +5,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <string>
 
 namespace McBopomofo::SmartLearning {
@@ -16,6 +17,13 @@ void writeFile(const fs::path& path, const std::string& content) {
   fs::create_directories(path.parent_path());
   std::ofstream out(path, std::ios::binary);
   out << content;
+}
+
+std::string readFile(const fs::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  std::ostringstream ss;
+  ss << in.rdbuf();
+  return ss.str();
 }
 
 class RemovedEntriesTest : public ::testing::Test {
@@ -111,6 +119,107 @@ TEST_F(RemovedEntriesTest, SwitchingFoldersRereadsAndNeverWrites) {
   entries.setLearningFolder(missing);
   EXPECT_EQ(entries.removedTime("english", "hello"), 0);
   EXPECT_FALSE(fs::exists(missing));
+}
+
+TEST_F(RemovedEntriesTest, AddWritesSortedLinesInWholeSeconds) {
+  writeFile(removedFile(),
+            "sentence\t明天見面再聊吧\t1700000000.75\n"
+            "english\tbroken\n"
+            "temporary\t甲乙 ㄐㄧㄚˇ-ㄧˇ\t1700000100\n");
+  RemovedEntries entries([this] { return now_; });
+  entries.setLearningFolder(learning_);
+  ASSERT_TRUE(entries.add(RemovedEntries::kEnglish, "zyxwv", 1700000200.9));
+  // Sorted by line; lines that cannot be read are dropped.
+  EXPECT_EQ(readFile(removedFile()),
+            "english\tzyxwv\t1700000200\n"
+            "sentence\t明天見面再聊吧\t1700000000\n"
+            "temporary\t甲乙 ㄐㄧㄚˇ-ㄧˇ\t1700000100\n");
+  EXPECT_EQ(entries.removedTime(RemovedEntries::kEnglish, "zyxwv"),
+            1700000200.9);
+
+  // Adding again replaces the time.
+  ASSERT_TRUE(entries.add(RemovedEntries::kEnglish, "zyxwv", 1700000300));
+  EXPECT_EQ(readFile(removedFile()),
+            "english\tzyxwv\t1700000300\n"
+            "sentence\t明天見面再聊吧\t1700000000\n"
+            "temporary\t甲乙 ㄐㄧㄚˇ-ㄧˇ\t1700000100\n");
+}
+
+TEST_F(RemovedEntriesTest, AddAndRemoveReadTheFileFirst) {
+  RemovedEntries entries([this] { return now_; });
+  entries.setLearningFolder(learning_);
+  EXPECT_EQ(entries.removedTime(RemovedEntries::kEnglish, "hello"), 0);
+  // Written by another program within the reload interval.
+  writeFile(removedFile(), "english\thello\t10\n");
+  ASSERT_TRUE(entries.add(RemovedEntries::kSentence, "謝謝您的耐心等候", 20));
+  EXPECT_EQ(readFile(removedFile()),
+            "english\thello\t10\nsentence\t謝謝您的耐心等候\t20\n");
+  EXPECT_EQ(entries.removedTime(RemovedEntries::kEnglish, "hello"), 10);
+
+  writeFile(removedFile(), "english\thello\t10\nenglish\tworld\t30\n");
+  ASSERT_TRUE(entries.remove(RemovedEntries::kEnglish, "hello"));
+  EXPECT_EQ(readFile(removedFile()), "english\tworld\t30\n");
+  EXPECT_EQ(entries.removedTime(RemovedEntries::kEnglish, "hello"), 0);
+  EXPECT_EQ(entries.removedTime(RemovedEntries::kEnglish, "world"), 30);
+}
+
+TEST_F(RemovedEntriesTest, RemovingAnAbsentEntryWritesNothing) {
+  RemovedEntries entries([this] { return now_; });
+  entries.setLearningFolder(learning_);
+  EXPECT_TRUE(entries.remove(RemovedEntries::kEnglish, "hello"));
+  EXPECT_FALSE(fs::exists(removedFile()));
+  writeFile(removedFile(), "english\tworld\t30\n");
+  EXPECT_TRUE(entries.remove(RemovedEntries::kEnglish, "hello"));
+  EXPECT_EQ(readFile(removedFile()), "english\tworld\t30\n");
+}
+
+TEST_F(RemovedEntriesTest, AddCreatesTheFileButNotTheUserDataFolder) {
+  RemovedEntries entries([this] { return now_; });
+  // The learning folder may be created, inside an existing user data folder.
+  fs::remove_all(learning_);
+  entries.setLearningFolder(learning_);
+  ASSERT_TRUE(entries.add(RemovedEntries::kEnglish, "hello", 10));
+  EXPECT_EQ(readFile(removedFile()), "english\thello\t10\n");
+
+  // A missing user data folder may be a sync folder that has not arrived.
+  const fs::path missing = root_ / "missing" / "learning";
+  entries.setLearningFolder(missing);
+  EXPECT_FALSE(entries.add(RemovedEntries::kEnglish, "hello", 10));
+  EXPECT_FALSE(fs::exists(root_ / "missing"));
+}
+
+TEST_F(RemovedEntriesTest, UnreadableFileIsNeverWritten) {
+  fs::create_directories(removedFile());  // a folder where the file should be
+  RemovedEntries entries([this] { return now_; });
+  entries.setLearningFolder(learning_);
+  EXPECT_FALSE(entries.add(RemovedEntries::kEnglish, "hello", 10));
+  EXPECT_FALSE(entries.remove(RemovedEntries::kEnglish, "hello"));
+  EXPECT_TRUE(fs::is_directory(removedFile()));
+
+  RemovedEntries noFolder([this] { return now_; });
+  EXPECT_FALSE(noFolder.add(RemovedEntries::kEnglish, "hello", 10));
+}
+
+TEST_F(RemovedEntriesTest, KeysThatBreakTheLineFormatAreRefused) {
+  RemovedEntries entries([this] { return now_; });
+  entries.setLearningFolder(learning_);
+  EXPECT_FALSE(entries.add(RemovedEntries::kEnglish, "a\tb", 10));
+  EXPECT_FALSE(entries.add(RemovedEntries::kEnglish, "a\nb", 10));
+  EXPECT_FALSE(fs::exists(removedFile()));
+}
+
+TEST_F(RemovedEntriesTest, ReloadIfChangedLooksAtTheStamp) {
+  RemovedEntries entries([this] { return now_; });
+  entries.setLearningFolder(learning_);
+  EXPECT_EQ(entries.removedTime(RemovedEntries::kEnglish, "hello"), 0);
+  EXPECT_FALSE(entries.reloadIfChanged());
+  writeFile(removedFile(), "english\thello\t10\n");
+  EXPECT_TRUE(entries.reloadIfChanged());
+  EXPECT_EQ(entries.removedTime(RemovedEntries::kEnglish, "hello"), 10);
+  EXPECT_FALSE(entries.reloadIfChanged());
+  // The own write is not a change.
+  ASSERT_TRUE(entries.add(RemovedEntries::kEnglish, "world", 20));
+  EXPECT_FALSE(entries.reloadIfChanged());
 }
 
 }  // namespace McBopomofo::SmartLearning

@@ -1,6 +1,7 @@
 #include "EnglishWords.h"
 
 #include <algorithm>
+#include <chrono>
 #include <set>
 #include <system_error>
 #include <unordered_map>
@@ -237,14 +238,19 @@ std::vector<std::string> EnglishLexicon::wordsWithPrefix(
 EnglishWordStore::EnglishWordStore(
     std::string deviceID, std::string deviceName,
     std::shared_ptr<const EnglishLexicon> lexicon, std::function<double()> now,
-    std::shared_ptr<RemovedEntries> removedEntries)
+    std::shared_ptr<RemovedEntries> removedEntries,
+    std::function<double()> wallNow)
     : deviceID_(std::move(deviceID)),
       ownFilename_(learningFilename(deviceID_, sanitizeDeviceName(deviceName))),
       lexicon_(lexicon ? std::move(lexicon) : emptyLexicon()),
       now_(std::move(now)),
       removedEntries_(removedEntries ? std::move(removedEntries)
-                                     : std::make_shared<RemovedEntries>(now_)) {
-}
+                                     : std::make_shared<RemovedEntries>(now_)),
+      wallNow_(wallNow ? std::move(wallNow) : [] {
+        return std::chrono::duration<double>(
+                   std::chrono::system_clock::now().time_since_epoch())
+            .count();
+      }) {}
 
 void EnglishWordStore::setLearningFolder(fs::path learningFolder) {
   // A relative path would resolve against the process's working directory.
@@ -299,6 +305,16 @@ bool EnglishWordStore::save() {
     }
     reload();
   }
+  // Nor what another program wrote to it since.
+  switch (mergeLocalFileIfChanged()) {
+    case FileChange::kUnreadable:
+      return false;
+    case FileChange::kChanged:
+      reload();
+      break;
+    case FileChange::kUnchanged:
+      break;
+  }
 
   std::vector<std::string> lines;
   lines.reserve(localCounts_.size());
@@ -325,8 +341,60 @@ bool EnglishWordStore::save() {
   if (!writeFileAtomically(ownFilePath(), content)) {
     return false;
   }
+  localStamp_ = stampOf(ownFilePath());
   unsavedChanges_ = false;
   return true;
+}
+
+std::vector<EnglishWordStore::WordCount> EnglishWordStore::allWords() {
+  reload();
+  std::vector<WordCount> words;
+  words.reserve(counts_.size());
+  for (const auto& [word, count] : counts_) {
+    words.push_back({word, count});
+  }
+  std::sort(words.begin(), words.end(),
+            [](const WordCount& a, const WordCount& b) {
+              std::string lowerA = asciiLowercased(a.word);
+              std::string lowerB = asciiLowercased(b.word);
+              return lowerA != lowerB ? lowerA < lowerB : a.word < b.word;
+            });
+  return words;
+}
+
+bool EnglishWordStore::add(const std::string& word) {
+  // A tab or a line break would break the line format of the file.
+  if (word.empty() || word.find_first_of("\t\r\n") != std::string::npos ||
+      !ensureLocalFileLoaded()) {
+    return false;
+  }
+  reload();
+  if (!removedEntries_->remove(RemovedEntries::kEnglish, word)) {
+    return false;
+  }
+  long long& count = localCounts_[word];
+  count = std::max(count, kAddedCount);
+  unsavedChanges_ = true;
+  bool saved = save();
+  reload();
+  return saved;
+}
+
+bool EnglishWordStore::remove(const std::string& word) {
+  if (!ensureLocalFileLoaded()) {
+    return false;
+  }
+  reload();
+  // Recorded first, so that the word is not brought back from the own file
+  // if another program wrote it meanwhile.
+  if (!removedEntries_->add(RemovedEntries::kEnglish, word, wallNow_())) {
+    return false;
+  }
+  localCounts_.erase(word);
+  unsavedChanges_ = true;
+  bool saved = save();
+  reload();
+  return saved;
 }
 
 std::optional<std::string> EnglishWordStore::preferredCase(
@@ -486,6 +554,12 @@ void EnglishWordStore::loadIfNeeded() {
 
 void EnglishWordStore::reload() {
   loadLocalFileIfNeeded();
+  if (hasFolder_) {
+    // Another program may have removed or added a word.
+    removedEntries_->reloadIfChanged();
+  }
+  mergeLocalFileIfChanged();
+  dropRemovedLocalWords();
   std::map<std::string, long long> merged = localCounts_;
   if (hasFolder_) {
     for (const auto& path :
@@ -546,6 +620,8 @@ bool EnglishWordStore::loadLocalFileIfNeeded() {
     }
   }
 
+  // Taken before reading, so that a change made meanwhile is read again.
+  const FileStamp stamp = stampOf(path);
   if (fs::exists(fs::symlink_status(path, ec))) {
     auto content = readWholeFile(path);
     if (!content) {
@@ -557,8 +633,50 @@ bool EnglishWordStore::loadLocalFileIfNeeded() {
       localCounts_[word] += count;
     }
   }
+  localStamp_ = stamp;
   localFilePending_ = false;
   return true;
+}
+
+bool EnglishWordStore::ensureLocalFileLoaded() {
+  if (!hasFolder_) {
+    return false;
+  }
+  return !localFilePending_ || loadLocalFileIfNeeded();
+}
+
+FileChange EnglishWordStore::mergeLocalFileIfChanged() {
+  if (!hasFolder_ || localFilePending_) {
+    return FileChange::kUnchanged;
+  }
+  std::string content;
+  FileChange change = readIfChanged(ownFilePath(), &localStamp_, &content);
+  if (change == FileChange::kChanged) {
+    for (const auto& [word, count] : parseCounts(content)) {
+      auto it = localCounts_.find(word);
+      if (it == localCounts_.end()) {
+        localCounts_[word] = count;
+      } else {
+        it->second = std::max(it->second, count);
+      }
+    }
+  }
+  return change;
+}
+
+void EnglishWordStore::dropRemovedLocalWords() {
+  if (!hasFolder_) {
+    return;
+  }
+  // A time of 0 means the entry is not removed.
+  for (auto it = localCounts_.begin(); it != localCounts_.end();) {
+    if (removedEntries_->removedTime(RemovedEntries::kEnglish, it->first) !=
+        0) {
+      it = localCounts_.erase(it);
+    } else {
+      ++it;
+    }
+  }
 }
 
 fs::path EnglishWordStore::englishFolder() const {

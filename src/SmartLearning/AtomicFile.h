@@ -44,6 +44,22 @@ struct FileStamp {
 
 FileStamp stampOf(const std::filesystem::path& path);
 
+// What readIfChanged() found.
+enum class FileChange {
+  // The file has the stamp it had, or it is gone (which removes nothing).
+  kUnchanged,
+  // The file changed and was read.
+  kChanged,
+  // The file changed but cannot be read.
+  kUnreadable,
+};
+
+// Reads the file at |path| if its stamp is not |*stamp|, for a store to merge
+// what another program wrote to its own file. |*stamp| is updated unless the
+// file cannot be read; |*content| is set only for kChanged.
+FileChange readIfChanged(const std::filesystem::path& path, FileStamp* stamp,
+                         std::string* content);
+
 // The lines of a text, split at any line break: LF, CR, VT, FF, NEL, LINE
 // SEPARATOR and PARAGRAPH SEPARATOR. CR LF gives an empty line between, like
 // a split at each of them.

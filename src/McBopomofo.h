@@ -438,6 +438,9 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   // Gives the temporary phrases to the language model; none in Plain
   // Bopomofo.
   void applyTemporaryPhrases();
+  // Reads every learning file that changed again now, for example after the
+  // vocabulary manager wrote one.
+  void recheckLearningFiles();
   // Points the text templates and the symbol table at the user data folder.
   void applyTextFiles();
   // Gives the symbol table to the language model, reading the file again if

@@ -9,6 +9,7 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <utility>
 
 namespace McBopomofo::SmartLearning {
 namespace fs = std::filesystem;
@@ -138,6 +139,31 @@ FileStamp stampOf(const fs::path& path) {
     stamp.size = 0;
   }
   return stamp;
+}
+
+FileChange readIfChanged(const fs::path& path, FileStamp* stamp,
+                         std::string* content) {
+  // Taken before reading, so that a change made meanwhile is read again.
+  FileStamp current = stampOf(path);
+  if (current == *stamp) {
+    return FileChange::kUnchanged;
+  }
+  if (!current.exists) {
+    std::error_code ec;
+    if (fs::exists(fs::symlink_status(path, ec))) {
+      // Something other than a file is in the way.
+      return FileChange::kUnreadable;
+    }
+    *stamp = current;
+    return FileChange::kUnchanged;
+  }
+  auto read = readWholeFile(path);
+  if (!read) {
+    return FileChange::kUnreadable;
+  }
+  *content = std::move(*read);
+  *stamp = current;
+  return FileChange::kChanged;
 }
 
 std::vector<std::string_view> splitLines(std::string_view text) {

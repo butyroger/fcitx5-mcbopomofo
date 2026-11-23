@@ -317,14 +317,16 @@ TEST_F(TemporaryPhrasesTest, PhrasesByReadingGroupsNewestFirst) {
   EXPECT_EQ(phrases, expected);
 }
 
-TEST_F(TemporaryPhrasesTest, OwnFileIsReadOnlyOnce) {
+TEST_F(TemporaryPhrasesTest, OwnFileChangedElsewhereIsMergedNotReplaced) {
   writeFile(ownFile(), line("甲乙", "ㄐㄧㄚˇ-ㄧˇ", kNow - 10));
   auto store = makeStore();
   store->setLearningFolder(learning_);
+  // A phrase missing from the file is not taken as removed: only removed.txt
+  // removes.
   writeFile(ownFile(), line("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ", kNow - 10));
   store->reload();
   EXPECT_TRUE(store->contains("甲乙", "ㄐㄧㄚˇ-ㄧˇ"));
-  EXPECT_FALSE(store->contains("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ"));
+  EXPECT_TRUE(store->contains("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ"));
 }
 
 TEST_F(TemporaryPhrasesTest, ReloadIfChangedSeesOtherDevices) {
@@ -395,6 +397,92 @@ TEST_F(TemporaryPhrasesTest, NoFolderMeansNothingIsWritten) {
   store->add("甲乙", "ㄐㄧㄚˇ-ㄧˇ");
   EXPECT_TRUE(store->contains("甲乙", "ㄐㄧㄚˇ-ㄧˇ"));
   EXPECT_FALSE(store->save());
+}
+
+// MARK: - Vocabulary manager
+
+std::string removedLine(const std::string& key, double time) {
+  return "temporary\t" + key + "\t" +
+         std::to_string(static_cast<long long>(time)) + "\n";
+}
+
+TEST_F(TemporaryPhrasesTest, AllPhrasesNewestFirstWithTheirTimes) {
+  writeFile(ownFile(), line("甲乙", "ㄐㄧㄚˇ-ㄧˇ", kNow - 30) +
+                           line("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ", kNow - 10));
+  auto store = makeStore();
+  store->setLearningFolder(learning_);
+  // Written elsewhere since: listing reads it again.
+  writeFile(temporary_ / "TESTDEV2-other.txt",
+            line("戊己", "ㄨˋ-ㄐㄧˇ", kNow - 20) +
+                line("甲乙", "ㄐㄧㄚˇ-ㄧˇ", kNow - 5));
+  auto phrases = store->allPhrases();
+  ASSERT_EQ(phrases.size(), 3U);
+  EXPECT_EQ(phrases[0].value, "甲乙");
+  EXPECT_EQ(phrases[0].reading, "ㄐㄧㄚˇ-ㄧˇ");
+  EXPECT_EQ(phrases[0].time, kNow - 5);
+  EXPECT_EQ(phrases[1].value, "丙丁");
+  EXPECT_EQ(phrases[2].value, "戊己");
+}
+
+TEST_F(TemporaryPhrasesTest, ForgetRecordsTheRemovalAndSaves) {
+  writeFile(ownFile(), line("甲乙", "ㄐㄧㄚˇ-ㄧˇ", kNow - 30) +
+                           line("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ", kNow - 10));
+  writeFile(temporary_ / "TESTDEV2-other.txt",
+            line("甲乙", "ㄐㄧㄚˇ-ㄧˇ", kNow - 20));
+  auto store = makeStore();
+  store->setLearningFolder(learning_);
+  now_ += 5;
+  ASSERT_TRUE(store->forget("甲乙", "ㄐㄧㄚˇ-ㄧˇ"));
+  EXPECT_FALSE(store->contains("甲乙", "ㄐㄧㄚˇ-ㄧˇ"));
+  EXPECT_FALSE(store->hasUnsavedChanges());
+  EXPECT_EQ(readFile(ownFile()), line("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ", kNow - 10));
+  EXPECT_EQ(readFile(learning_ / "removed.txt"),
+            removedLine("甲乙 ㄐㄧㄚˇ-ㄧˇ", now_));
+  // The other device's file is left as it is, and stays hidden.
+  EXPECT_EQ(readFile(temporary_ / "TESTDEV2-other.txt"),
+            line("甲乙", "ㄐㄧㄚˇ-ㄧˇ", kNow - 20));
+  store->reload();
+  EXPECT_FALSE(store->contains("甲乙", "ㄐㄧㄚˇ-ㄧˇ"));
+}
+
+TEST_F(TemporaryPhrasesTest, ForgetWritesNothingWhilePending) {
+  const fs::path learning = root_ / "data" / "learning";
+  auto store = makeStore();
+  store->setLearningFolder(learning);
+  ASSERT_TRUE(store->isLocalFilePending());
+  EXPECT_FALSE(store->forget("甲乙", "ㄐㄧㄚˇ-ㄧˇ"));
+  EXPECT_FALSE(fs::exists(root_ / "data"));
+  EXPECT_TRUE(store->allPhrases().empty());
+}
+
+TEST_F(TemporaryPhrasesTest, APhraseForgottenByAnotherProgramStaysForgotten) {
+  writeFile(ownFile(), line("甲乙", "ㄐㄧㄚˇ-ㄧˇ", kNow - 30) +
+                           line("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ", kNow - 10));
+  auto ime = makeStore();
+  ime->setLearningFolder(learning_);
+  auto manager = makeStore();
+  manager->setLearningFolder(learning_);
+  now_ += 1;
+  ASSERT_TRUE(manager->forget("甲乙", "ㄐㄧㄚˇ-ㄧˇ"));
+
+  // The input method saves a phrase picked since, without having reloaded.
+  ime->add("戊己", "ㄨˋ-ㄐㄧˇ");
+  ASSERT_TRUE(ime->save());
+  EXPECT_EQ(readFile(ownFile()), line("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ", kNow - 10) +
+                                     line("戊己", "ㄨˋ-ㄐㄧˇ", now_));
+  EXPECT_FALSE(ime->contains("甲乙", "ㄐㄧㄚˇ-ㄧˇ"));
+
+  // The manager reads the own file again when it changed, the later time of
+  // each phrase winning.
+  writeFile(ownFile(), line("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ", kNow + 50) +
+                           line("戊己", "ㄨˋ-ㄐㄧˇ", kNow - 100) +
+                           line("庚辛", "ㄍㄥ-ㄒㄧㄣ", kNow - 200));
+  auto phrases = manager->allPhrases();
+  ASSERT_EQ(phrases.size(), 3U);
+  EXPECT_EQ(phrases[0].value, "丙丁");
+  EXPECT_EQ(phrases[0].time, kNow + 50);
+  EXPECT_EQ(phrases[1].value, "戊己");
+  EXPECT_EQ(phrases[2].value, "庚辛");
 }
 
 }  // namespace McBopomofo::SmartLearning
