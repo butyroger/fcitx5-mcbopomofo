@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
 
 #include <chrono>
 #include <csignal>
@@ -137,6 +138,57 @@ TEST_F(AtomicFileTest, CreateFileIfAbsentNeverTouchesExistingFile) {
 
 TEST_F(AtomicFileTest, CreateFileIfAbsentFailsWhenFolderMissing) {
   EXPECT_FALSE(createFileIfAbsent(folder_ / "nope" / "data.txt", "x"));
+}
+
+// Sets the umask for the life of the object.
+class ScopedUmask {
+ public:
+  explicit ScopedUmask(mode_t mask) : previous_(::umask(mask)) {}
+  ~ScopedUmask() { ::umask(previous_); }
+
+ private:
+  mode_t previous_;
+};
+
+static mode_t permissionsOf(const fs::path& p) {
+  struct stat st {};
+  if (::stat(p.c_str(), &st) != 0) {
+    return static_cast<mode_t>(-1);
+  }
+  return st.st_mode & 07777;
+}
+
+TEST_F(AtomicFileTest, KeepsPermissions0644OfExistingFile) {
+  auto path = folder_ / "data.txt";
+  ASSERT_TRUE(createFileIfAbsent(path, "one"));
+  ASSERT_EQ(::chmod(path.c_str(), 0644), 0);
+  // A strict umask must not make the shared file private.
+  ScopedUmask mask(077);
+  ASSERT_TRUE(writeFileAtomically(path, "two"));
+  EXPECT_EQ(slurp(path), "two");
+  EXPECT_EQ(permissionsOf(path), static_cast<mode_t>(0644));
+}
+
+TEST_F(AtomicFileTest, KeepsPermissions0640OfExistingFile) {
+  auto path = folder_ / "data.txt";
+  ASSERT_TRUE(createFileIfAbsent(path, "one"));
+  ASSERT_EQ(::chmod(path.c_str(), 0640), 0);
+  ScopedUmask mask(022);
+  ASSERT_TRUE(writeFileAtomically(path, "two"));
+  EXPECT_EQ(permissionsOf(path), static_cast<mode_t>(0640));
+}
+
+TEST_F(AtomicFileTest, NewFileGetsPermissionsFromUmask) {
+  {
+    ScopedUmask mask(022);
+    ASSERT_TRUE(writeFileAtomically(folder_ / "a.txt", "x"));
+  }
+  EXPECT_EQ(permissionsOf(folder_ / "a.txt"), static_cast<mode_t>(0644));
+  {
+    ScopedUmask mask(002);
+    ASSERT_TRUE(writeFileAtomically(folder_ / "b.txt", "x"));
+  }
+  EXPECT_EQ(permissionsOf(folder_ / "b.txt"), static_cast<mode_t>(0664));
 }
 
 }  // namespace McBopomofo::SmartLearning

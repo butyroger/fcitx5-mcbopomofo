@@ -1,6 +1,7 @@
 #include "AtomicFile.h"
 
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include <cerrno>
@@ -53,8 +54,20 @@ bool writeFileAtomically(const fs::path& path, std::string_view content) {
   const fs::path folder = path.parent_path();
   fs::path tmp = folder / ("." + path.filename().string() + ".tmp-" +
                            std::to_string(static_cast<long>(::getpid())));
-  int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+  // A new file gets 0666 less the umask, which open applies by itself; this
+  // reads no process-wide state, so it is safe with other threads.
+  int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
   if (fd < 0) {
+    return false;
+  }
+  // The new content replaces the file, so it keeps the file's permissions:
+  // a shared file must not become readable only by its owner.
+  struct stat existing {};
+  if (::stat(path.c_str(), &existing) == 0 && S_ISREG(existing.st_mode) &&
+      ::fchmod(fd, existing.st_mode & 07777) != 0) {
+    ::close(fd);
+    std::error_code ec;
+    fs::remove(tmp, ec);
     return false;
   }
   // On network file systems a write error may only show up at fsync or
