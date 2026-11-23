@@ -325,6 +325,13 @@ FCITX_CONFIGURATION(
         this, "UserDataFolder",
         _("User data folder (shared with other computers)"), ""};
 
+    // The programs that show the text being composed in the input method
+    // panel instead of inside the program, which only receives the committed
+    // text. Names as the program reports them; also toggled from the menu.
+    fcitx::Option<std::vector<std::string>> floatingCompositionPrograms{
+        this, "FloatingCompositionPrograms",
+        _("Programs using the floating composition window"), {}};
+
     // Identifies this device in the learned-choice folder. Generated on first
     // start; never edited by hand.
     fcitx::HiddenOption<std::string> deviceID{this, "DeviceID", "DeviceID", ""};
@@ -491,6 +498,14 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   void refreshLayoutActions(fcitx::InputContext* context);
   // Switches to |layout| from the menu: saves it, drops any composing text
   // without committing, and tells the user.
+  // Whether to put the text being composed into the program of |context|,
+  // rather than into the input method panel.
+  bool useClientPreedit(fcitx::InputContext* context) const;
+  // The floating composition menu item: shown only for a named program,
+  // checked when that program uses it.
+  void refreshFloatingCompositionAction(fcitx::InputContext* context);
+  void toggleFloatingComposition(fcitx::InputContext* context);
+
   void selectQuickLayout(fcitx::InputContext* context,
                          BopomofoKeyboardLayout layout, const char* title);
   void showUserDataFolderWarning();
@@ -544,6 +559,7 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::unique_ptr<fcitx::SimpleAction> excludedPhrasesAction_;
   // Only when the vocabulary manager is built.
   std::unique_ptr<fcitx::SimpleAction> manageVocabularyAction_;
+  std::unique_ptr<fcitx::SimpleAction> floatingCompositionAction_;
 };
 
 class McBopomofoEngineFactory : public fcitx::AddonFactory {

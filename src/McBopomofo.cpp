@@ -46,6 +46,7 @@
 #include <vector>
 
 #include "CandidateAdjustment.h"
+#include "FloatingComposition.h"
 #include "Format.h"
 #include "Key.h"
 #include "LearningPaths.h"
@@ -742,6 +743,17 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
     instance_->userInterfaceManager().registerAction(
         "mcbopomofo-manage-vocabulary", manageVocabularyAction_.get());
   }
+
+  floatingCompositionAction_ = std::make_unique<fcitx::SimpleAction>();
+  floatingCompositionAction_->setShortText(
+      _("Floating Composition Window for This Program"));
+  floatingCompositionAction_->setCheckable(true);
+  floatingCompositionAction_->connect<fcitx::SimpleAction::Activated>(
+      [this](fcitx::InputContext* context) {
+        toggleFloatingComposition(context);
+      });
+  instance_->userInterfaceManager().registerAction(
+      "mcbopomofo-floating-composition", floatingCompositionAction_.get());
 }
 
 McBopomofoEngine::~McBopomofoEngine() {
@@ -1004,7 +1016,64 @@ void McBopomofoEngine::applySmartOptions() {
       layoutForConfig(config_.bopomofoKeyboardLayout.value()));
   if (auto* context = instance_->mostRecentInputContext()) {
     refreshModeIcons(context);
+    // The list may have been edited in the config tool.
+    if (floatingCompositionAction_) {
+      floatingCompositionAction_->setChecked(
+          SmartLearning::UsesFloatingComposition(
+              context->program(), config_.floatingCompositionPrograms.value()));
+      floatingCompositionAction_->update(context);
+    }
   }
+}
+
+bool McBopomofoEngine::useClientPreedit(fcitx::InputContext* context) const {
+  return SmartLearning::UseClientPreedit(
+      context->capabilityFlags().test(fcitx::CapabilityFlag::Preedit),
+      context->program(), config_.floatingCompositionPrograms.value());
+}
+
+void McBopomofoEngine::refreshFloatingCompositionAction(
+    fcitx::InputContext* context) {
+  auto& statusArea = context->statusArea();
+  // Without a program name there is nothing to remember it by.
+  if (context->program().empty()) {
+    statusArea.removeAction(floatingCompositionAction_.get());
+    return;
+  }
+  floatingCompositionAction_->setChecked(SmartLearning::UsesFloatingComposition(
+      context->program(), config_.floatingCompositionPrograms.value()));
+  floatingCompositionAction_->update(context);
+  statusArea.addAction(fcitx::StatusGroup::InputMethod,
+                       floatingCompositionAction_.get());
+}
+
+void McBopomofoEngine::toggleFloatingComposition(
+    fcitx::InputContext* context) {
+  if (context == nullptr || context->program().empty()) {
+    return;
+  }
+  // Whatever is being composed is committed first, so that no text is left
+  // shown where it no longer belongs.
+  keyHandler_->reset();
+  enterNewState(context, std::make_unique<InputStates::Empty>());
+
+  const std::string program = context->program();
+  auto toggled = SmartLearning::ToggleFloatingComposition(
+      config_.floatingCompositionPrograms.value(), program);
+  config_.floatingCompositionPrograms.setValue(std::move(toggled.programs));
+  fcitx::safeSaveAsIni(config_, kConfigPath);
+
+  if (notifications()) {
+    std::string message = fmt::format(
+        FmtRuntime(toggled.enabled
+                       ? _("Floating composition window on for {0}")
+                       : _("Floating composition window off for {0}")),
+        program);
+    notifications()->call<fcitx::INotifications::showTip>(
+        "mcbopomofo-floating-composition-toggle", _("McBopomofo"),
+        "fcitx_mcbopomofo", message, message, kFcitx5NotificationTimeoutInMs);
+  }
+  refreshFloatingCompositionAction(context);
 }
 
 void McBopomofoEngine::refreshLayoutActions(fcitx::InputContext* context) {
@@ -1142,6 +1211,7 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
     inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
                                          manageVocabularyAction_.get());
   }
+  refreshFloatingCompositionAction(inputContext);
 
   keyHandler_->setInputMode(mode);
 
@@ -1238,8 +1308,7 @@ void McBopomofoEngine::reset(const fcitx::InputMethodEntry& /*unused*/,
       event.type() == fcitx::EventType::InputContextReset) {
     keyHandler_->reset();
 
-    bool useClientPreedit =
-        context->capabilityFlags().test(fcitx::CapabilityFlag::Preedit);
+    bool useClientPreedit = this->useClientPreedit(context);
     if (useClientPreedit) {
       context->inputPanel().setClientPreedit(fcitx::Text{});
     } else {
@@ -2721,8 +2790,7 @@ void McBopomofoEngine::handleStateWithCustomInput(fcitx::InputContext* context,
   context->inputPanel().reset();
   context->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
 
-  bool useClientPreedit =
-      context->capabilityFlags().test(fcitx::CapabilityFlag::Preedit);
+  bool useClientPreedit = this->useClientPreedit(context);
   fcitx::TextFormatFlags normalFormat{useClientPreedit
                                           ? fcitx::TextFormatFlag::Underline
                                           : fcitx::TextFormatFlag::NoFlag};
@@ -2783,8 +2851,7 @@ fcitx::CandidateLayoutHint McBopomofoEngine::getCandidateLayoutHint() const {
 
 void McBopomofoEngine::updatePreedit(fcitx::InputContext* context,
                                      InputStates::NotEmpty* state) {
-  bool useClientPreedit =
-      context->capabilityFlags().test(fcitx::CapabilityFlag::Preedit);
+  bool useClientPreedit = this->useClientPreedit(context);
   fcitx::TextFormatFlags normalFormat{useClientPreedit
                                           ? fcitx::TextFormatFlag::Underline
                                           : fcitx::TextFormatFlag::NoFlag};

@@ -17,6 +17,8 @@ add_library(SmartLearningLib
         CommonSentences.cpp
         EnglishWords.h
         EnglishWords.cpp
+        FloatingComposition.h
+        FloatingComposition.cpp
         LearnPhrase.h
         LearnPhrase.cpp
         LearningFileUtils.h
@@ -61,6 +63,7 @@ if (ENABLE_TEST)
                 CandidateAdjustmentTest.cpp
                 CommonSentencesTest.cpp
                 EnglishWordsTest.cpp
+                FloatingCompositionTest.cpp
                 LearnPhraseTest.cpp
                 LearningPathsTest.cpp
                 MixedInputTest.cpp

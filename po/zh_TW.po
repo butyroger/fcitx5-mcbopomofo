@@ -792,3 +792,19 @@ msgstr "加入中文詞彙"
 #, qt-format
 msgid "Added %1 to the Chinese phrases."
 msgstr "已將 %1 筆加入中文詞彙。"
+
+#: src/McBopomofo.h
+msgid "Programs using the floating composition window"
+msgstr "使用浮動組字窗的程式"
+
+#: src/McBopomofo.cpp
+msgid "Floating Composition Window for This Program"
+msgstr "此程式使用浮動組字窗"
+
+#: src/McBopomofo.cpp
+msgid "Floating composition window on for {0}"
+msgstr "「{0}」已使用浮動組字窗"
+
+#: src/McBopomofo.cpp
+msgid "Floating composition window off for {0}"
+msgstr "「{0}」已停用浮動組字窗"
