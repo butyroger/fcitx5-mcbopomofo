@@ -610,6 +610,9 @@ McBopomofoEngine::~McBopomofoEngine() {
 }
 
 void McBopomofoEngine::applyLearningFolder() {
+  if (languageModelLoader_->userDataPath().empty()) {
+    return;
+  }
   userOverrideStore_->setLearningFolder(
       std::filesystem::path(languageModelLoader_->userDataPath()) /
       "learning");

@@ -30,7 +30,7 @@ class UserOverrideStore {
 
   UserOverrideStore(std::string deviceID, std::string deviceName);
 
-  // Uses the learning folder. Setting the current folder again only reloads.
+  // Uses the learning folder. An empty or relative path is ignored. Setting the current folder again only reloads.
   // When switching folders, the own model is saved to the old folder (if its
   // file was loaded), then replaced by what the new folder's own file holds.
   void setLearningFolder(std::filesystem::path folder);

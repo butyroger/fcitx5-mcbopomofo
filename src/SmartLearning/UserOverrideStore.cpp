@@ -53,6 +53,10 @@ UserOverrideStore::UserOverrideStore(std::string deviceID,
       mergedModel_(kMergedCapacity, kHalfLife) {}
 
 void UserOverrideStore::setLearningFolder(fs::path folder) {
+  // A relative path would resolve against the process's working directory.
+  if (folder.empty() || !folder.is_absolute()) {
+    return;
+  }
   if (hasFolder_ && normalizedFolder(folder) == normalizedFolder(folder_)) {
     // The own file is already loaded (or still pending) from this folder;
     // loading it again would add its counts a second time.

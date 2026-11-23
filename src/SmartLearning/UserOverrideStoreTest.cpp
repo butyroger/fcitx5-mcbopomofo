@@ -141,6 +141,20 @@ class UserOverrideStoreTest : public ::testing::Test {
   Walks walks_;
 };
 
+TEST_F(UserOverrideStoreTest, EmptyOrRelativeFolderIsIgnored) {
+  const fs::path oldCwd = fs::current_path();
+  fs::current_path(folder_);
+  {
+    UserOverrideStore store("TESTDEV1", "test");
+    store.setLearningFolder("");
+    store.setLearningFolder("learning");
+    store.observe(walks_.oilBefore, walks_.oilAfter, 1, kNow);
+    EXPECT_FALSE(store.save());
+  }
+  EXPECT_TRUE(fs::is_empty(fs::current_path()));
+  fs::current_path(oldCwd);
+}
+
 TEST_F(UserOverrideStoreTest, MergesOtherDevicesAndSavesOnlyOwnFile) {
   const fs::path macFile = folder_ / "1778D9F7-Mac Studio.txt";
   const std::string macContent = accumulateLine(walks_);
