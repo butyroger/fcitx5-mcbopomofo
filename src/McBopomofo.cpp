@@ -24,6 +24,7 @@
 #include "McBopomofo.h"
 
 #include <fcitx-utils/i18n.h>
+#include <fcitx-utils/misc.h>
 #include <fcitx/candidatelist.h>
 #include <fcitx/event.h>
 #include <fcitx/inputcontext.h>
@@ -31,6 +32,10 @@
 #include <fmt/format.h>
 #include <notifications_public.h>  // from fcitx-module/notifications
 
+#include <unistd.h>
+
+#include <ctime>
+#include <filesystem>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -40,6 +45,7 @@
 
 #include "Format.h"
 #include "Key.h"
+#include "LearningPaths.h"
 #include "Log.h"
 #include "UTF8Helper.h"
 
@@ -445,13 +451,30 @@ static std::string GetOpenFileWith(const McBopomofoConfig& config) {
 
 McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
     : instance_(instance) {
+  // The device ID in the config identifies this device in the learning folder.
+  // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
+  reloadConfig();
+  if (config_.deviceID.value().empty()) {
+    config_.deviceID.setValue(SmartLearning::newDeviceID());
+    fcitx::safeSaveAsIni(config_, kConfigPath);
+  }
+
   languageModelLoader_ = std::make_shared<LanguageModelLoader>(
       std::make_unique<LanguageModelLoaderLocalizedStrings>());
   userFileIssues_ = languageModelLoader_->getUserFileIssues();
+  char hostName[256] = {};
+  if (gethostname(hostName, sizeof(hostName) - 1) != 0) {
+    hostName[0] = '\0';
+  }
+  userOverrideStore_ = std::make_shared<SmartLearning::UserOverrideStore>(
+      config_.deviceID.value(), hostName);
+  applyLearningFolder();
   keyHandler_ = std::make_shared<KeyHandler>(
       languageModelLoader_->getLM(),
       languageModelLoader_->getVariantAnnotator(), languageModelLoader_,
-      std::make_unique<KeyHandlerLocalizedString>());
+      std::make_unique<KeyHandlerLocalizedString>(), userOverrideStore_);
+  keyHandler_->setOnUserOverrideObserved(
+      [this]() { scheduleLearningSave(); });
   keyHandler_->setOnAddNewPhrase([this](std::string newPhrase) {
     auto addScriptHookEnabled = config_.addScriptHookEnabled.value();
     if (!addScriptHookEnabled) {
@@ -577,10 +600,35 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
       });
   instance_->userInterfaceManager().registerAction(
       "mcbopomofo-user-excluded-phrases-edit", excludedPhrasesAction_.get());
+}
 
-  // Required by convention of fcitx5 modules to load config on its own.
-  // NOLINTNEXTLINE(clang-analyzer-optin.cplusplus.VirtualCall)
-  reloadConfig();
+McBopomofoEngine::~McBopomofoEngine() {
+  learningSaveTimer_.reset();
+  if (userOverrideStore_) {
+    userOverrideStore_->save();
+  }
+}
+
+void McBopomofoEngine::applyLearningFolder() {
+  userOverrideStore_->setLearningFolder(
+      std::filesystem::path(languageModelLoader_->userDataPath()) /
+      "learning");
+}
+
+void McBopomofoEngine::scheduleLearningSave() {
+  learningSaveRetried_ = false;
+  learningSaveTimer_ = instance_->eventLoop().addTimeEvent(
+      CLOCK_MONOTONIC, fcitx::now(CLOCK_MONOTONIC) + 2000000, 0,
+      [this](fcitx::EventSourceTime* source, uint64_t) {
+        // Saving fails while the own file has not been loaded yet (for
+        // example it is still being synced); try once more later.
+        if (!userOverrideStore_->save() && !learningSaveRetried_) {
+          learningSaveRetried_ = true;
+          source->setTime(fcitx::now(CLOCK_MONOTONIC) + 2000000);
+          source->setOneShot();
+        }
+        return true;
+      });
 }
 
 const fcitx::Configuration* McBopomofoEngine::getConfig() const {
@@ -709,6 +757,8 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   } else {
     keyHandler_->setBopomofoFontAnnotationSupportEnabled(false);
   }
+
+  userOverrideStore_->reloadIfChanged();
 
   bool didReload = languageModelLoader_->reloadUserModelsIfNeeded();
   if (didReload) {

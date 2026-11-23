@@ -21,6 +21,9 @@
 // FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 // OTHER DEALINGS IN THE SOFTWARE.
 
+#include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <utility>
@@ -117,9 +120,24 @@ class KeyHandlerTest : public ::testing::Test {
     userPhraseAdder_ = std::make_shared<MockUserPhraseAdder>();
     variantAnnotator_ = CreateLoadedAnnotator();
 
+    auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    learningFolder_ =
+        std::filesystem::temp_directory_path() /
+        ("keyhandler-learning-" + std::to_string(stamp) + "-" +
+         ::testing::UnitTest::GetInstance()->current_test_info()->name());
+    std::filesystem::create_directories(learningFolder_);
+    store_ = std::make_shared<SmartLearning::UserOverrideStore>("TESTDEV1",
+                                                                "test");
+    store_->setLearningFolder(learningFolder_);
+
     keyHandler_ = std::make_unique<KeyHandler>(
         languageModel_, variantAnnotator_, userPhraseAdder_,
-        std::make_unique<MockLocalizedString>());
+        std::make_unique<MockLocalizedString>(), store_);
+  }
+
+  void TearDown() override {
+    std::error_code ec;
+    std::filesystem::remove_all(learningFolder_, ec);
   }
 
   std::vector<Key> asciiKeys(const std::string& keyString) {
@@ -176,6 +194,8 @@ class KeyHandlerTest : public ::testing::Test {
   std::shared_ptr<UserPhraseAdder> userPhraseAdder_;
   std::unique_ptr<KeyHandler> keyHandler_;
   std::shared_ptr<VariantAnnotator> variantAnnotator_;
+  std::shared_ptr<SmartLearning::UserOverrideStore> store_;
+  std::filesystem::path learningFolder_;
 };
 
 TEST_F(KeyHandlerTest, EmptyKeyNotHandled) {
@@ -245,6 +265,53 @@ TEST_F(KeyHandlerTest, EnterCandidateState) {
   EXPECT_THAT(choosingCandidateState->candidates,
               testing::Contains(InputStates::ChoosingCandidate::Candidate(
                   "ㄓㄨㄥ-ㄨㄣˊ", "中文", "中文")));
+}
+
+TEST_F(KeyHandlerTest, ChoosingCandidateIsObservedAndPersisted) {
+  int observed = 0;
+  keyHandler_->setOnUserOverrideObserved([&] { ++observed; });
+  // ㄋㄧˇ, then open the candidates.
+  auto state = handleKeySequence(asciiKeys("su3 "));
+  auto* choosing = dynamic_cast<InputStates::ChoosingCandidate*>(state.get());
+  ASSERT_TRUE(choosing != nullptr);
+  ASSERT_EQ(choosing->composingBuffer, "你");
+  keyHandler_->candidateSelected(
+      InputStates::ChoosingCandidate::Candidate("ㄋㄧˇ", "妳", "妳"),
+      choosing->originalCursor, [](std::unique_ptr<InputState>) {});
+  EXPECT_EQ(observed, 1);
+  ASSERT_TRUE(store_->save());
+  EXPECT_TRUE(std::filesystem::exists(learningFolder_ / "TESTDEV1-test.txt"));
+}
+
+TEST_F(KeyHandlerTest, SuggestionFromAnotherDeviceIsUsed) {
+  // Another device learned 妳 for ㄋㄧˇ.
+  {
+    auto peerStore = std::make_shared<SmartLearning::UserOverrideStore>(
+        "PEERDEV1", "Peer Mac");
+    peerStore->setLearningFolder(learningFolder_);
+    KeyHandler peer(languageModel_, variantAnnotator_, userPhraseAdder_,
+                    std::make_unique<MockLocalizedString>(), peerStore);
+    std::unique_ptr<InputState> state = std::make_unique<InputStates::Empty>();
+    auto setState = [&state](std::unique_ptr<InputState> s) {
+      state = std::move(s);
+    };
+    for (const Key& k : asciiKeys("su3 ")) {
+      peer.handle(k, state.get(), setState, []() {});
+    }
+    auto* choosing = dynamic_cast<InputStates::ChoosingCandidate*>(state.get());
+    ASSERT_TRUE(choosing != nullptr);
+    peer.candidateSelected(
+        InputStates::ChoosingCandidate::Candidate("ㄋㄧˇ", "妳", "妳"),
+        choosing->originalCursor, [](std::unique_ptr<InputState>) {});
+    ASSERT_TRUE(peerStore->save());
+  }
+  ASSERT_TRUE(std::filesystem::exists(learningFolder_ / "PEERDEV1-Peer Mac.txt"));
+
+  store_->reload();
+  auto endState = handleKeySequence(asciiKeys("su3"));
+  auto* inputting = dynamic_cast<InputStates::Inputting*>(endState.get());
+  ASSERT_TRUE(inputting != nullptr);
+  EXPECT_EQ(inputting->composingBuffer, "妳");
 }
 
 TEST_F(KeyHandlerTest, CursorMovementLeft) {

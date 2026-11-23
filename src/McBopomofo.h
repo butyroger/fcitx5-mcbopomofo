@@ -35,6 +35,7 @@
 #include <fcitx/candidatelist.h>
 #include <fcitx/inputmethodengine.h>
 #include <fcitx/instance.h>
+#include <fcitx-utils/event.h>
 
 #include <memory>
 #include <string>
@@ -43,6 +44,7 @@
 #include "InputState.h"
 #include "KeyHandler.h"
 #include "LanguageModelLoader.h"
+#include "UserOverrideStore.h"
 #include "PathCompat.h"
 
 namespace McBopomofo {
@@ -206,6 +208,10 @@ FCITX_CONFIGURATION(
         this, "AddScriptHookEnabled",
         _("Run the hook script after adding a phrase"), false};
 
+    // Identifies this device in the learned-choice folder. Generated on first
+    // start; never edited by hand.
+    fcitx::HiddenOption<std::string> deviceID{this, "DeviceID", "DeviceID", ""};
+
     // If half-width punctuation is enabled or not.
     fcitx::HiddenOption<bool> halfWidthPunctuationEnable{
         this, "HalfWidthPunctuationEnable", _("Enable Half Width Punctuation"),
@@ -251,6 +257,7 @@ FCITX_CONFIGURATION(
 class McBopomofoEngine : public fcitx::InputMethodEngine {
  public:
   explicit McBopomofoEngine(fcitx::Instance* instance);
+  ~McBopomofoEngine() override;
   fcitx::Instance* instance() { return instance_; }
 
   void activate(const fcitx::InputMethodEntry& entry,
@@ -311,10 +318,20 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
 
   void showAndClearUserFileIssues();
 
+  // Points the learned-choice store at "<user data folder>/learning".
+  void applyLearningFolder();
+
+  // (Re)starts the 2-second timer after which the learned choices are saved.
+  // Choices made in quick succession share one save.
+  void scheduleLearningSave();
+
   fcitx::CandidateLayoutHint getCandidateLayoutHint() const;
 
   std::shared_ptr<LanguageModelLoader> languageModelLoader_;
   std::vector<McBopomofoLM::UserFileIssue> userFileIssues_;
+  std::shared_ptr<SmartLearning::UserOverrideStore> userOverrideStore_;
+  std::unique_ptr<fcitx::EventSourceTime> learningSaveTimer_;
+  bool learningSaveRetried_ = false;
   std::shared_ptr<KeyHandler> keyHandler_;
   std::unique_ptr<InputState> state_;
   McBopomofoConfig config_;

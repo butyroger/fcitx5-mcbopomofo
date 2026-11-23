@@ -37,6 +37,7 @@
 #include "InputState.h"
 #include "Key.h"
 #include "LanguageModelLoader.h"
+#include "UserOverrideStore.h"
 
 namespace McBopomofo {
 
@@ -59,7 +60,8 @@ class KeyHandler {
       std::shared_ptr<Formosa::Gramambular2::LanguageModel> languageModel,
       std::shared_ptr<VariantAnnotator> variantAnnotator,
       std::shared_ptr<UserPhraseAdder> userPhraseAdder,
-      std::unique_ptr<LocalizedStrings> localizedStrings);
+      std::unique_ptr<LocalizedStrings> localizedStrings,
+      std::shared_ptr<SmartLearning::UserOverrideStore> userOverrideStore);
 
   using StateCallback =
       std::function<void(std::unique_ptr<McBopomofo::InputState>)>;
@@ -177,6 +179,12 @@ class KeyHandler {
   void setHalfWidthPunctuationEnabled(bool enabled);
 
   // Sets the lambda for adding the phrases.
+  // Invoked after each choice the user made has been recorded into the
+  // learned-choice store, so that the owner can schedule saving it.
+  void setOnUserOverrideObserved(std::function<void()> callback) {
+    onUserOverrideObserved_ = std::move(callback);
+  }
+
   void setOnAddNewPhrase(
       std::function<void(const std::string&)> onAddNewPhrase);
 
@@ -314,7 +322,8 @@ class KeyHandler {
   std::shared_ptr<UserPhraseAdder> userPhraseAdder_;
   std::unique_ptr<LocalizedStrings> localizedStrings_;
 
-  UserOverrideModel userOverrideModel_;
+  std::shared_ptr<SmartLearning::UserOverrideStore> userOverrideStore_;
+  std::function<void()> onUserOverrideObserved_;
   Formosa::Mandarin::BopomofoReadingBuffer reading_;
   Formosa::Gramambular2::ReadingGrid::WalkResult latestWalk_;
   std::shared_ptr<DictionaryServices> dictionaryServices_;

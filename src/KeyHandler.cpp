@@ -53,8 +53,6 @@ constexpr size_t kMaxValidMarkingReadingCount = 8;
 constexpr size_t kMaxChineseNumberConversionDigits = 20;
 constexpr size_t kMaxRomanNumberConversionDigits = 4;
 
-constexpr int kUserOverrideModelCapacity = 500;
-constexpr double kObservedOverrideHalfLife = 5400.0;  // 1.5 hr.
 // Unigram whose score is below this shouldn't be put into user override model.
 constexpr double kNoOverrideThreshold = -8.0;
 
@@ -103,13 +101,14 @@ KeyHandler::KeyHandler(
     std::shared_ptr<Formosa::Gramambular2::LanguageModel> languageModel,
     std::shared_ptr<VariantAnnotator> variantAnnotator,
     std::shared_ptr<UserPhraseAdder> userPhraseAdder,
-    std::unique_ptr<LocalizedStrings> localizedStrings)
+    std::unique_ptr<LocalizedStrings> localizedStrings,
+    std::shared_ptr<SmartLearning::UserOverrideStore> userOverrideStore)
     : lm_(std::move(languageModel)),
       variantAnnotator_(std::move(variantAnnotator)),
       grid_(lm_),
       userPhraseAdder_(std::move(userPhraseAdder)),
       localizedStrings_(std::move(localizedStrings)),
-      userOverrideModel_(kUserOverrideModelCapacity, kObservedOverrideHalfLife),
+      userOverrideStore_(std::move(userOverrideStore)),
       reading_(Formosa::Mandarin::BopomofoKeyboardLayout::StandardLayout()) {
   dictionaryServices_ = std::make_unique<DictionaryServices>();
   dictionaryServices_->load();
@@ -210,7 +209,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     walk();
 
     if (inputMode_ != McBopomofo::InputMode::PlainBopomofo) {
-      UserOverrideModel::Suggestion suggestion = userOverrideModel_.suggest(
+      UserOverrideModel::Suggestion suggestion = userOverrideStore_->mergedModel()->suggest(
           latestWalk_, actualCandidateCursorIndex(), GetEpochNowInSeconds());
 
       if (!suggestion.empty()) {
@@ -1842,8 +1841,11 @@ void KeyHandler::pinNode(
 
   if (currentNode != nullptr &&
       currentNode->currentUnigram().score() > kNoOverrideThreshold) {
-    userOverrideModel_.observe(prevWalk, latestWalk_, actualCursor,
-                               GetEpochNowInSeconds());
+    userOverrideStore_->observe(prevWalk, latestWalk_, actualCursor,
+                                GetEpochNowInSeconds());
+    if (onUserOverrideObserved_) {
+      onUserOverrideObserved_();
+    }
   }
 
   if (currentNode != nullptr && useMoveCursorAfterSelectionSetting &&
