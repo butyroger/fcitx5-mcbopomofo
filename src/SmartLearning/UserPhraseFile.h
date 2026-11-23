@@ -3,6 +3,9 @@
 
 #include <filesystem>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 // Edits of the user phrase file (data.txt) and the excluded phrase file
 // (exclude-phrases.txt). Each line of both files is "<value> <reading>".
@@ -29,6 +32,18 @@ namespace McBopomofo::SmartLearning::UserPhraseFile {
 bool learn(const std::filesystem::path& data,
            const std::filesystem::path& exclude, const std::string& value,
            const std::string& reading);
+
+// Learns several phrases, each (value, reading) as learn() does, in order,
+// reading each file once and writing the data file at most once. Returns
+// the phrases learned; none if the data file is missing or cannot be read
+// or written, or the excluded file exists but cannot be read.
+std::vector<std::pair<std::string, std::string>> learn(
+    const std::filesystem::path& data, const std::filesystem::path& exclude,
+    const std::vector<std::pair<std::string, std::string>>& phrases);
+
+// Whether |text| can be one column of a line: it is not empty and holds no
+// white space or line break (the Unicode separators included).
+bool fitsInColumn(std::string_view text);
 
 // Boosts a phrase: takes it out of the excluded file, then adds it to the
 // end of the data file. Returns false if the data file already has it, or

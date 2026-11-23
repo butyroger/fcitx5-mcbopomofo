@@ -69,6 +69,11 @@ class LanguageModelLoader : public UserPhraseAdder {
 
   bool reloadUserModelsIfNeeded();
 
+  // Reloads data.txt and exclude-phrases.txt now, such as after a phrase was
+  // learned: a change within the precision of the modification time would
+  // be missed by reloadUserModelsIfNeeded().
+  void reloadUserPhrases();
+
   // Switches to another folder for data.txt, exclude-phrases.txt and
   // phrases-replacement.txt, and reloads the user phrases from it. Missing
   // template files are created there; existing files are never overwritten.

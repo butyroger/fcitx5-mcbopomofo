@@ -265,6 +265,13 @@ bool LanguageModelLoader::reloadUserModelsIfNeeded() {
   return shouldReloadUserPhrases || shouldReloadPhrasesReplacement;
 }
 
+void LanguageModelLoader::reloadUserPhrases() {
+  userPhrasesPath_.checkTimestamp();
+  excludedPhrasesPath_.checkTimestamp();
+  lm_->loadUserPhrases(userPhrasesPath_.path().c_str(),
+                       excludedPhrasesPath_.path().c_str());
+}
+
 std::vector<McBopomofoLM::UserFileIssue>
 LanguageModelLoader::getUserFileIssues() const {
   return lm_->getUserFileIssues();

@@ -383,7 +383,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     walk();
     auto inputtingState = buildInputtingState();
     if (grid_.cursor() >= grid_.length()) {
-      learnEnglishWordsFromWalk();
+      learnFromCommittedComposition();
       // Steal the composingBuffer built by the inputting state.
       auto committingState = std::make_unique<InputStates::Committing>(
           inputtingState->composingBuffer);
@@ -468,7 +468,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
         std::string keys = rawKeysOfCurrentReading();
         clearReading();
         insertLiteralText(keys);
-        learnEnglishWordsFromWalk();
+        learnFromCommittedComposition();
         auto inputtingState = buildInputtingState();
         stateCallback(std::make_unique<InputStates::Committing>(
             inputtingState->composingBuffer));
@@ -562,7 +562,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       return true;
     }
 
-    learnEnglishWordsFromWalk();
+    learnFromCommittedComposition();
     auto inputtingState = buildInputtingState();
     // Steal the composingBuffer built by the inputting state.
     auto committingState = std::make_unique<InputStates::Committing>(
@@ -670,6 +670,8 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
           grid_.overrideCandidate(loc, chrStr);
         }
         walk();
+        // Committing with an uppercase letter only records the English
+        // words; the phrases are not learned on this path.
         learnEnglishWordsFromWalk();
         auto inputtingState = buildInputtingState();
         // Steal the composingBuffer built by the inputting state.
@@ -889,6 +891,7 @@ void KeyHandler::reset() {
   rawKeysOfReading_.clear();
   grid_.clear();
   latestWalk_ = Formosa::Gramambular2::ReadingGrid::WalkResult();
+  phrasesPickedInComposition_.clear();
 }
 
 void KeyHandler::clearReading() {
@@ -1118,7 +1121,7 @@ bool KeyHandler::handleAssociatedPhrases(InputStates::Inputting* state,
 
 void KeyHandler::handleForceCommitAndReset(StateCallback stateCallback) {
   clearReading();
-  learnEnglishWordsFromWalk();
+  learnFromCommittedComposition();
   auto inputtingState = buildInputtingState();
   auto committingState = std::make_unique<InputStates::Committing>(
       inputtingState->composingBuffer);
@@ -2024,6 +2027,7 @@ void KeyHandler::pinNode(
     if (onUserOverrideObserved_) {
       onUserOverrideObserved_();
     }
+    learnPickedPhrase(currentNode, prevWalk, actualCursor);
   }
 
   if (currentNode != nullptr && useMoveCursorAfterSelectionSetting &&
@@ -2235,6 +2239,74 @@ bool KeyHandler::convertTrailingEnglishToChinese(
   walk();
   stateCallback(buildInputtingState());
   return true;
+}
+
+void KeyHandler::learnFromCommittedComposition() {
+  learnEnglishWordsFromWalk();
+  if (inputMode_ != McBopomofo::InputMode::McBopomofo ||
+      temporaryPhraseStore_ == nullptr) {
+    return;
+  }
+  // Only memory is looked up here; data.txt is written once, and only when a
+  // temporary phrase was typed again.
+  auto phrases = SmartLearning::PhrasesToLearnOnCommit(
+      latestWalk_, phrasesPickedInComposition_,
+      [this](const std::string& value, const std::string& reading) {
+        return temporaryPhraseStore_->contains(value, reading);
+      });
+  if (phrases.empty()) {
+    return;
+  }
+  for (const auto& [value, reading] : phrases) {
+    temporaryPhraseStore_->remove(value, reading);
+  }
+  if (userPhraseLearner_) {
+    userPhraseLearner_(phrases);
+  }
+  if (onPhraseLearned_) {
+    onPhraseLearned_();
+  }
+}
+
+void KeyHandler::learnPickedPhrase(
+    const Formosa::Gramambular2::ReadingGrid::NodePtr& node,
+    const Formosa::Gramambular2::ReadingGrid::WalkResult& walkBefore,
+    size_t cursor) {
+  if (inputMode_ != McBopomofo::InputMode::McBopomofo ||
+      temporaryPhraseStore_ == nullptr) {
+    return;
+  }
+  // The merged model already holds this pick, and the picks made on the
+  // other devices.
+  const UserOverrideModel& model = *userOverrideStore_->mergedModel();
+  const SmartLearning::LearnAction actions[] = {
+      SmartLearning::PlanLearnPickedPhrase(node, model),
+      SmartLearning::PlanLearnBrokenUpPhrase(node, walkBefore, latestWalk_,
+                                             cursor, model)};
+  bool changed = false;
+  for (const auto& action : actions) {
+    switch (action.kind) {
+      case SmartLearning::LearnAction::kNone:
+        break;
+      case SmartLearning::LearnAction::kAddTemporary:
+        temporaryPhraseStore_->add(action.value, action.reading);
+        phrasesPickedInComposition_.emplace(action.value, action.reading);
+        changed = true;
+        break;
+      case SmartLearning::LearnAction::kLearnUserPhrase:
+        if (temporaryPhraseStore_->contains(action.value, action.reading)) {
+          temporaryPhraseStore_->remove(action.value, action.reading);
+          changed = true;
+        }
+        if (userPhraseLearner_) {
+          userPhraseLearner_({{action.value, action.reading}});
+        }
+        break;
+    }
+  }
+  if (changed && onPhraseLearned_) {
+    onPhraseLearned_();
+  }
 }
 
 void KeyHandler::learnEnglishWordsFromWalk() {

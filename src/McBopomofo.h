@@ -44,6 +44,7 @@
 #include "InputState.h"
 #include "KeyHandler.h"
 #include "LanguageModelLoader.h"
+#include "TemporaryPhrases.h"
 #include "UserOverrideStore.h"
 #include "PathCompat.h"
 
@@ -399,9 +400,16 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
 
   void showAndClearUserFileIssues();
 
-  // Points the learned-choice store and the English words at
-  // "<user data folder>/learning".
+  // Points the learned-choice store, the English words and the temporary
+  // phrases at "<user data folder>/learning".
   void applyLearningFolder();
+  // Gives the temporary phrases to the language model; none in Plain
+  // Bopomofo.
+  void applyTemporaryPhrases();
+  // Writes the phrases to data.txt at once, reloads the user phrases and
+  // tells the user. Returns the phrases learned.
+  std::vector<SmartLearning::Phrase> learnUserPhrases(
+      const std::vector<SmartLearning::Phrase>& phrases);
   // Resolves the configured user data folder and switches to it.
   void applyUserDataFolder();
   // Applies the options that take effect on the key handler right away, then
@@ -433,6 +441,7 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::vector<McBopomofoLM::UserFileIssue> userFileIssues_;
   std::shared_ptr<SmartLearning::UserOverrideStore> userOverrideStore_;
   std::shared_ptr<SmartLearning::EnglishWordStore> englishWordStore_;
+  std::shared_ptr<SmartLearning::TemporaryPhraseStore> temporaryPhraseStore_;
   std::unique_ptr<fcitx::EventSourceTime> learningSaveTimer_;
   bool learningSaveRetried_ = false;
   // A choice has been learned since the learned choices were last saved.

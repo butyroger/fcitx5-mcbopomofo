@@ -543,3 +543,7 @@ msgstr "注音－標準鍵盤"
 #: src/McBopomofo.cpp
 msgid "Bopomofo - Hsu Keyboard"
 msgstr "注音－許氏鍵盤"
+
+#: src/McBopomofo.cpp
+msgid "Learned phrase \"{0}\""
+msgstr "已學會詞彙「{0}」"

@@ -36,6 +36,8 @@
 
 #include "EnglishWords.h"
 #include "KeyHandler.h"
+#include "TemporaryPhrases.h"
+#include "UserPhraseFile.h"
 #include "gtest/gtest.h"
 
 namespace McBopomofo {
@@ -124,6 +126,72 @@ class KeyHandlerSmartTest : public ::testing::Test {
     keyHandler_->setFixEnglishWordCase(true);
     keyHandler_->setEscTrimsMistypedText(true);
     useLayout(BopomofoKeyboardLayout::StandardLayout());
+    setUpPhraseLearning();
+  }
+
+  // The temporary phrases go to the language model, and the phrases learned
+  // to data.txt, as the engine does; each write is counted.
+  void setUpPhraseLearning() {
+    data_ = folder_ / "data.txt";
+    exclude_ = folder_ / "exclude-phrases.txt";
+    writeFile(data_, "# user phrases\n");
+    writeFile(exclude_, "");
+    temporaryStore_ = std::make_shared<SmartLearning::TemporaryPhraseStore>(
+        "TESTDEV1", "test", [] { return 1700000000.0; });
+    temporaryStore_->setLearningFolder(folder_);
+    keyHandler_->setTemporaryPhraseStore(temporaryStore_);
+    keyHandler_->setUserPhraseLearner(
+        [this](const std::vector<std::pair<std::string, std::string>>&
+                   phrases) {
+          ++learnerCalls_;
+          auto learned = SmartLearning::UserPhraseFile::learn(data_, exclude_,
+                                                               phrases);
+          if (!learned.empty()) {
+            ++dataWrites_;
+            lm_->loadUserPhrases(data_.c_str(), exclude_.c_str());
+          }
+          return learned;
+        });
+    keyHandler_->setOnPhraseLearned([this] {
+      ++phraseLearnedCalls_;
+      applyTemporaryPhrases();
+    });
+  }
+
+  void applyTemporaryPhrases() {
+    lm_->setTemporaryPhrases(temporaryStore_->phrasesByReading());
+  }
+
+  static void writeFile(const std::filesystem::path& path,
+                        const std::string& content) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out << content;
+  }
+
+  static std::string readFile(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    std::stringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+  }
+
+  // Opens the candidates at the end of the composition and picks one.
+  void pickCandidate(const std::string& reading, const std::string& value) {
+    press(Key::asciiKey(Key::SPACE));
+    auto* choosing =
+        dynamic_cast<InputStates::ChoosingCandidate*>(state_.get());
+    ASSERT_NE(choosing, nullptr);
+    keyHandler_->candidateSelected(
+        InputStates::ChoosingCandidate::Candidate(reading, value, value),
+        choosing->originalCursor,
+        [this](std::unique_ptr<InputState> newState) {
+          take(std::move(newState));
+        });
+  }
+
+  std::string firstValueOf(const std::string& reading) {
+    auto unigrams = lm_->getUnigrams(reading);
+    return unigrams.empty() ? "" : unigrams[0].value();
   }
 
   void TearDown() override {
@@ -200,6 +268,12 @@ class KeyHandlerSmartTest : public ::testing::Test {
   std::shared_ptr<SmartLearning::UserOverrideStore> overrideStore_;
   std::shared_ptr<SmartLearning::EnglishWordStore> englishStore_;
   std::unique_ptr<KeyHandler> keyHandler_;
+  std::filesystem::path data_;
+  std::filesystem::path exclude_;
+  std::shared_ptr<SmartLearning::TemporaryPhraseStore> temporaryStore_;
+  int learnerCalls_ = 0;
+  int dataWrites_ = 0;
+  int phraseLearnedCalls_ = 0;
   std::unique_ptr<InputState> state_ = std::make_unique<InputStates::Empty>();
   std::string committed_;
 };
@@ -568,6 +642,147 @@ TEST_F(KeyHandlerSmartTest, OldBehaviorWhenOptionOff) {
   type("hellojkq");
   pressEsc();
   EXPECT_TRUE(isEmptyState());
+}
+
+// MARK: - Learning phrases
+
+// ㄋㄧˇ ㄏㄠˇ, where 你好 wins over 妳好.
+constexpr char kNiHaoKeys[] = "su3cl3";
+constexpr char kNiHaoReading[] = "ㄋㄧˇ-ㄏㄠˇ";
+
+TEST_F(KeyHandlerSmartTest, PickedPhraseBecomesTemporaryAndWinsNextTime) {
+  type(kNiHaoKeys);
+  ASSERT_EQ(composingBuffer(), "你好");
+  pickCandidate(kNiHaoReading, "妳好");
+  EXPECT_EQ(composingBuffer(), "妳好");
+  EXPECT_TRUE(temporaryStore_->contains("妳好", kNiHaoReading));
+  EXPECT_TRUE(temporaryStore_->hasUnsavedChanges());
+  EXPECT_EQ(phraseLearnedCalls_, 1);
+  EXPECT_EQ(learnerCalls_, 0);
+  // The temporary phrase comes before the built-in ones.
+  EXPECT_EQ(firstValueOf(kNiHaoReading), "妳好");
+
+  // Committed in the composition where it was picked: not typed again.
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "妳好");
+  EXPECT_EQ(learnerCalls_, 0);
+  EXPECT_TRUE(temporaryStore_->contains("妳好", kNiHaoReading));
+  EXPECT_EQ(readFile(data_), "# user phrases\n");
+
+  // The next composition gives it right away.
+  restart();
+  type(kNiHaoKeys);
+  EXPECT_EQ(composingBuffer(), "妳好");
+}
+
+TEST_F(KeyHandlerSmartTest, TemporaryPhraseTypedAgainIsLearnedOnCommit) {
+  type(kNiHaoKeys);
+  pickCandidate(kNiHaoReading, "妳好");
+  press(Key::asciiKey(Key::RETURN));
+
+  restart();
+  type(kNiHaoKeys);
+  ASSERT_EQ(composingBuffer(), "妳好");
+  EXPECT_EQ(learnerCalls_, 0);
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "妳好");
+  EXPECT_EQ(learnerCalls_, 1);
+  EXPECT_EQ(dataWrites_, 1);
+  EXPECT_EQ(readFile(data_), "# user phrases\n妳好 ㄋㄧˇ-ㄏㄠˇ\n");
+  EXPECT_FALSE(temporaryStore_->contains("妳好", kNiHaoReading));
+  EXPECT_EQ(firstValueOf(kNiHaoReading), "妳好");
+
+  // Committed again: no longer temporary, nothing more to write.
+  restart();
+  type(kNiHaoKeys);
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "妳好");
+  EXPECT_EQ(learnerCalls_, 1);
+}
+
+TEST_F(KeyHandlerSmartTest, PhrasePickedTwiceIsLearned) {
+  type(kNiHaoKeys);
+  pickCandidate(kNiHaoReading, "妳好");
+  ASSERT_TRUE(temporaryStore_->contains("妳好", kNiHaoReading));
+  EXPECT_EQ(learnerCalls_, 0);
+
+  // Dropped, not committed, then picked again.
+  restart();
+  type("cl3");
+  type(kNiHaoKeys);
+  pickCandidate(kNiHaoReading, "妳好");
+  EXPECT_EQ(learnerCalls_, 1);
+  EXPECT_EQ(readFile(data_), "# user phrases\n妳好 ㄋㄧˇ-ㄏㄠˇ\n");
+  EXPECT_FALSE(temporaryStore_->contains("妳好", kNiHaoReading));
+}
+
+TEST_F(KeyHandlerSmartTest, BrokenUpPhraseIsTemporaryThenLearned) {
+  // ㄒㄩˇ ㄕˋ gives 許是; the user picks 氏.
+  type("vm3g4");
+  ASSERT_EQ(composingBuffer(), "許是");
+  pickCandidate("ㄕˋ", "氏");
+  EXPECT_EQ(composingBuffer(), "許氏");
+  EXPECT_TRUE(temporaryStore_->contains("許氏", "ㄒㄩˇ-ㄕˋ"));
+  EXPECT_EQ(learnerCalls_, 0);
+
+  // Now 許氏 comes first; picking 氏 there again learns it.
+  restart();
+  type("vm3g4");
+  ASSERT_EQ(composingBuffer(), "許氏");
+  pickCandidate("ㄕˋ", "氏");
+  EXPECT_EQ(learnerCalls_, 1);
+  EXPECT_EQ(readFile(data_), "# user phrases\n許氏 ㄒㄩˇ-ㄕˋ\n");
+  EXPECT_FALSE(temporaryStore_->contains("許氏", "ㄒㄩˇ-ㄕˋ"));
+}
+
+TEST_F(KeyHandlerSmartTest, CommittingALongSentenceWritesOnce) {
+  // Ten temporary phrases from earlier compositions, typed again as one
+  // sentence of twenty characters.
+  const std::vector<std::pair<std::string, std::string>> phrases = {
+      {"我們", "ㄨㄛˇ-ㄇㄣˊ"}, {"今天", "ㄐㄧㄣ-ㄊㄧㄢ"},
+      {"下午", "ㄒㄧㄚˋ-ㄨˇ"},  {"去開", "ㄑㄩˋ-ㄎㄞ"},
+      {"會這", "ㄏㄨㄟˋ-ㄓㄜˋ"}, {"個問", "ㄍㄜˋ-ㄨㄣˋ"},
+      {"題需", "ㄊㄧˊ-ㄒㄩ"},   {"要大", "ㄧㄠˋ-ㄉㄚˋ"},
+      {"家一", "ㄐㄧㄚ-ㄧˋ"},   {"起討", "ㄑㄧˇ-ㄊㄠˇ"}};
+  std::vector<std::string> syllables;
+  std::string sentence;
+  std::string expectedData = "# user phrases\n";
+  for (const auto& [value, reading] : phrases) {
+    temporaryStore_->add(value, reading);
+    size_t dash = reading.find('-');
+    syllables.push_back(reading.substr(0, dash));
+    syllables.push_back(reading.substr(dash + 1));
+    sentence += value;
+    expectedData += value + " " + reading + "\n";
+  }
+  applyTemporaryPhrases();
+  ASSERT_EQ(syllables.size(), 20u);
+
+  type(KeysForSyllables(BopomofoKeyboardLayout::StandardLayout(), syllables));
+  ASSERT_EQ(composingBuffer(), sentence);
+  // Typing alone never touches data.txt.
+  EXPECT_EQ(learnerCalls_, 0);
+
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, sentence);
+  EXPECT_EQ(learnerCalls_, 1);
+  EXPECT_EQ(dataWrites_, 1);
+  EXPECT_EQ(readFile(data_), expectedData);
+  for (const auto& [value, reading] : phrases) {
+    EXPECT_FALSE(temporaryStore_->contains(value, reading)) << value;
+  }
+}
+
+TEST_F(KeyHandlerSmartTest, UppercaseLetterCommitDoesNotLearnPhrases) {
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
+  temporaryStore_->add("妳好", kNiHaoReading);
+  applyTemporaryPhrases();
+  type(kNiHaoKeys);
+  ASSERT_EQ(composingBuffer(), "妳好");
+  press(Key::asciiKey('A'));
+  EXPECT_EQ(committed_, "妳好A");
+  EXPECT_EQ(learnerCalls_, 0);
+  EXPECT_TRUE(temporaryStore_->contains("妳好", kNiHaoReading));
 }
 
 }  // namespace McBopomofo

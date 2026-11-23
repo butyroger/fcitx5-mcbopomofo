@@ -49,6 +49,7 @@
 #include "LearningPaths.h"
 #include "MixedInput.h"
 #include "UserDataFolder.h"
+#include "UserPhraseFile.h"
 #include "Log.h"
 #include "UTF8Helper.h"
 
@@ -484,6 +485,13 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
                    std::chrono::steady_clock::now().time_since_epoch())
             .count();
       });
+  // Temporary phrases are compared across devices, by the wall clock.
+  temporaryPhraseStore_ = std::make_shared<SmartLearning::TemporaryPhraseStore>(
+      config_.deviceID.value(), hostName, [] {
+        return std::chrono::duration<double>(
+                   std::chrono::system_clock::now().time_since_epoch())
+            .count();
+      });
   applyUserDataFolder();
   applyLearningFolder();
   keyHandler_ = std::make_shared<KeyHandler>(
@@ -493,6 +501,17 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   keyHandler_->setOnUserOverrideObserved([this]() {
     userOverrideSavePending_ = true;
     scheduleLearningSave();
+  });
+  keyHandler_->setTemporaryPhraseStore(temporaryPhraseStore_);
+  keyHandler_->setUserPhraseLearner(
+      [this](const std::vector<SmartLearning::Phrase>& phrases) {
+        return learnUserPhrases(phrases);
+      });
+  keyHandler_->setOnPhraseLearned([this]() {
+    applyTemporaryPhrases();
+    if (temporaryPhraseStore_->hasUnsavedChanges()) {
+      scheduleLearningSave();
+    }
   });
   keyHandler_->setEnglishWordStore(englishWordStore_);
   keyHandler_->setOnEnglishWordsRecorded([this]() {
@@ -667,6 +686,9 @@ McBopomofoEngine::~McBopomofoEngine() {
   if (englishWordStore_ && englishWordStore_->hasUnsavedChanges()) {
     englishWordStore_->save();
   }
+  if (temporaryPhraseStore_ && temporaryPhraseStore_->hasUnsavedChanges()) {
+    temporaryPhraseStore_->save();
+  }
 }
 
 bool McBopomofoEngine::saveLearning() {
@@ -679,6 +701,10 @@ bool McBopomofoEngine::saveLearning() {
     }
   }
   if (englishWordStore_->hasUnsavedChanges() && !englishWordStore_->save()) {
+    saved = false;
+  }
+  if (temporaryPhraseStore_->hasUnsavedChanges() &&
+      !temporaryPhraseStore_->save()) {
     saved = false;
   }
   return saved;
@@ -694,6 +720,42 @@ void McBopomofoEngine::applyLearningFolder() {
   if (englishWordStore_) {
     englishWordStore_->setLearningFolder(learningFolder);
   }
+  if (temporaryPhraseStore_) {
+    temporaryPhraseStore_->setLearningFolder(learningFolder);
+    applyTemporaryPhrases();
+  }
+}
+
+void McBopomofoEngine::applyTemporaryPhrases() {
+  bool enabled =
+      keyHandler_ == nullptr ||
+      keyHandler_->inputMode() == McBopomofo::InputMode::McBopomofo;
+  languageModelLoader_->getLM()->setTemporaryPhrases(
+      enabled ? temporaryPhraseStore_->phrasesByReading()
+              : std::unordered_map<std::string, std::vector<std::string>>());
+}
+
+std::vector<SmartLearning::Phrase> McBopomofoEngine::learnUserPhrases(
+    const std::vector<SmartLearning::Phrase>& phrases) {
+  auto learned = SmartLearning::UserPhraseFile::learn(
+      languageModelLoader_->userPhrasesPath(),
+      languageModelLoader_->excludedPhrasesPath(), phrases);
+  if (learned.empty()) {
+    return learned;
+  }
+  languageModelLoader_->reloadUserPhrases();
+  for (const auto& [value, reading] : learned) {
+    FCITX_MCBOPOMOFO_INFO() << "Learned phrase: " << value
+                            << ", reading: " << reading;
+    if (notifications()) {
+      std::string message =
+          fmt::format(FmtRuntime(_("Learned phrase \"{0}\"")), value);
+      notifications()->call<fcitx::INotifications::showTip>(
+          "mcbopomofo-learned-phrase", _("McBopomofo"), "fcitx_mcbopomofo",
+          message, message, kFcitx5NotificationTimeoutInMs);
+    }
+  }
+  return learned;
 }
 
 void McBopomofoEngine::applyUserDataFolder() {
@@ -978,6 +1040,9 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   }
 
   userOverrideStore_->reloadIfChanged();
+  // Also drops the temporary phrases in Plain Bopomofo.
+  temporaryPhraseStore_->reloadIfChanged();
+  applyTemporaryPhrases();
 
   bool didReload = languageModelLoader_->reloadUserModelsIfNeeded();
   if (didReload) {

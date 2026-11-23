@@ -26,7 +26,10 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "DictionaryService.h"
 #include "EnglishWords.h"
@@ -38,6 +41,8 @@
 #include "InputState.h"
 #include "Key.h"
 #include "LanguageModelLoader.h"
+#include "LearnPhrase.h"
+#include "TemporaryPhrases.h"
 #include "UserOverrideStore.h"
 
 namespace McBopomofo {
@@ -231,6 +236,29 @@ class KeyHandler {
     onEnglishWordsRecorded_ = std::move(callback);
   }
 
+  // The phrases picked once. A phrase picked becomes a temporary phrase, and
+  // is learned as a user phrase when picked again or typed again and
+  // committed. Without the store, no phrase is learned.
+  void setTemporaryPhraseStore(
+      std::shared_ptr<SmartLearning::TemporaryPhraseStore> store) {
+    temporaryPhraseStore_ = std::move(store);
+  }
+
+  // Writes the phrases, each a value and a reading, to the user phrase file
+  // at once, and returns the ones learned.
+  using UserPhraseLearner =
+      std::function<std::vector<SmartLearning::Phrase>(
+          const std::vector<SmartLearning::Phrase>&)>;
+  void setUserPhraseLearner(UserPhraseLearner learner) {
+    userPhraseLearner_ = std::move(learner);
+  }
+
+  // Invoked after the temporary phrases changed, so that the owner can give
+  // them to the language model and schedule saving them.
+  void setOnPhraseLearned(std::function<void()> callback) {
+    onPhraseLearned_ = std::move(callback);
+  }
+
   // Whether the letters typed are being put as English.
   [[nodiscard]] bool isSmartEnglishMode() const { return smartEnglishMode_; }
 
@@ -396,6 +424,15 @@ class KeyHandler {
                                        const StateCallback& stateCallback);
   // Records the English words in the composition about to be committed.
   void learnEnglishWordsFromWalk();
+  // Learns from the composition about to be committed: the temporary phrases
+  // typed again become user phrases, and the English words are recorded.
+  void learnFromCommittedComposition();
+  // Learns the phrase of the candidate just picked at |cursor|, or the
+  // characters that broke up the phrase there in |walkBefore|.
+  void learnPickedPhrase(
+      const Formosa::Gramambular2::ReadingGrid::NodePtr& node,
+      const Formosa::Gramambular2::ReadingGrid::WalkResult& walkBefore,
+      size_t cursor);
   bool isEnglishWord(const std::string& text) const;
   bool isEnglishWordOrPrefix(const std::string& text) const;
 
@@ -424,6 +461,12 @@ class KeyHandler {
   std::shared_ptr<SmartLearning::EnglishWordStore> englishWordStore_;
   std::function<void(bool)> onSmartEnglishModeChanged_;
   std::function<void()> onEnglishWordsRecorded_;
+  std::shared_ptr<SmartLearning::TemporaryPhraseStore> temporaryPhraseStore_;
+  UserPhraseLearner userPhraseLearner_;
+  std::function<void()> onPhraseLearned_;
+  // The phrases that became temporary phrases in this composition; committing
+  // them does not count as typing them again.
+  std::set<SmartLearning::Phrase> phrasesPickedInComposition_;
   Formosa::Gramambular2::ReadingGrid::WalkResult latestWalk_;
   std::shared_ptr<DictionaryServices> dictionaryServices_;
 

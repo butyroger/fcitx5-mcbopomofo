@@ -11,6 +11,8 @@ add_library(SmartLearningLib
         BopomofoKeys.cpp
         EnglishWords.h
         EnglishWords.cpp
+        LearnPhrase.h
+        LearnPhrase.cpp
         LearningPaths.h
         LearningPaths.cpp
         MixedInput.h
@@ -37,6 +39,7 @@ if (ENABLE_TEST)
                 AtomicFileTest.cpp
                 BopomofoKeysTest.cpp
                 EnglishWordsTest.cpp
+                LearnPhraseTest.cpp
                 LearningPathsTest.cpp
                 MixedInputTest.cpp
                 RemovedEntriesTest.cpp

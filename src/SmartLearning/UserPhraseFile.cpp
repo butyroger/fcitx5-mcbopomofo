@@ -197,26 +197,12 @@ void removePhraseFromFile(const fs::path& path, const std::string& value,
   }
 }
 
-}  // namespace
-
-bool learn(const fs::path& data, const fs::path& exclude,
-           const std::string& value, const std::string& reading) {
-  if (!isPlainPart(value) || !isPlainPart(reading)) {
-    return false;
-  }
-  // Never bring back a phrase the user excluded.
-  if (!isMissing(exclude)) {
-    auto excluded = readWholeFile(exclude);
-    if (!excluded || holdsPhrase(*excluded, value, reading)) {
-      return false;
-    }
-  }
-
-  auto content = readWholeFile(data);
-  if (!content) {
-    return false;
-  }
-  std::vector<std::string_view> lines = splitLines(*content);
+// The content with the phrase learned, or nullopt if it is already the first
+// phrase of its reading.
+std::optional<std::string> learnedContent(std::string content,
+                                          const std::string& value,
+                                          const std::string& reading) {
+  std::vector<std::string_view> lines = splitLines(content);
   std::optional<size_t> firstOfReading;
   std::vector<bool> isThePhrase(lines.size(), false);
   for (size_t i = 0; i < lines.size(); ++i) {
@@ -234,12 +220,11 @@ bool learn(const fs::path& data, const fs::path& exclude,
   }
 
   if (!firstOfReading) {
-    return writeFileAtomically(
-        data, withPhraseAtEnd(std::move(*content), value, reading));
+    return withPhraseAtEnd(std::move(content), value, reading);
   }
   if (isThePhrase[*firstOfReading]) {
     // Already the first one.
-    return false;
+    return std::nullopt;
   }
   const std::string newLine = value + " " + reading;
   std::vector<std::string_view> edited;
@@ -252,7 +237,63 @@ bool learn(const fs::path& data, const fs::path& exclude,
       edited.push_back(lines[i]);
     }
   }
-  return writeFileAtomically(data, joinLines(edited));
+  return joinLines(edited);
+}
+
+}  // namespace
+
+bool fitsInColumn(std::string_view text) {
+  if (text.empty()) {
+    return false;
+  }
+  for (size_t pos = 0; pos < text.size();) {
+    size_t length = 0;
+    if (isWhiteSpace(decodeAt(text, pos, &length))) {
+      return false;
+    }
+    pos += length;
+  }
+  return true;
+}
+
+bool learn(const fs::path& data, const fs::path& exclude,
+           const std::string& value, const std::string& reading) {
+  return !learn(data, exclude, {{value, reading}}).empty();
+}
+
+std::vector<std::pair<std::string, std::string>> learn(
+    const fs::path& data, const fs::path& exclude,
+    const std::vector<std::pair<std::string, std::string>>& phrases) {
+  if (phrases.empty()) {
+    return {};
+  }
+  // Never bring back a phrase the user excluded.
+  std::optional<std::string> excluded;
+  if (!isMissing(exclude)) {
+    excluded = readWholeFile(exclude);
+    if (!excluded) {
+      return {};
+    }
+  }
+  auto content = readWholeFile(data);
+  if (!content) {
+    return {};
+  }
+  std::vector<std::pair<std::string, std::string>> learned;
+  for (const auto& [value, reading] : phrases) {
+    if (!isPlainPart(value) || !isPlainPart(reading) ||
+        (excluded && holdsPhrase(*excluded, value, reading))) {
+      continue;
+    }
+    if (auto edited = learnedContent(*content, value, reading)) {
+      content = std::move(edited);
+      learned.emplace_back(value, reading);
+    }
+  }
+  if (learned.empty() || !writeFileAtomically(data, *content)) {
+    return {};
+  }
+  return learned;
 }
 
 bool write(const fs::path& data, const fs::path& exclude,

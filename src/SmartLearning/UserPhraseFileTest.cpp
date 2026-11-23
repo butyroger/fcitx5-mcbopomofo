@@ -7,6 +7,8 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace McBopomofo::SmartLearning {
 namespace fs = std::filesystem;
@@ -162,6 +164,65 @@ TEST_F(UserPhraseFileTest, LearnNeverWritesAfterAFailedRead) {
   makeUnreadable(exclude_);
   EXPECT_FALSE(UserPhraseFile::learn(data_, exclude_, "乙", "ㄧˇ"));
   EXPECT_EQ(readFile(data_), "甲 ㄐㄧㄚˇ\n");
+}
+
+// MARK: - learn, several phrases
+
+TEST_F(UserPhraseFileTest, LearnSeveralWritesOnceInOrder) {
+  writeFile(data_, "# header\n丁戊 ㄉㄧㄥ-ㄨˋ\n");
+  writeFile(exclude_, "己庚 ㄐㄧˇ-ㄍㄥ\n");
+  using Phrases = std::vector<std::pair<std::string, std::string>>;
+  Phrases learned = UserPhraseFile::learn(
+      data_, exclude_,
+      Phrases{{"乙丙", "ㄧˇ-ㄅㄧㄥˇ"},
+              {"己庚", "ㄐㄧˇ-ㄍㄥ"},      // excluded
+              {"丁午", "ㄉㄧㄥ-ㄨˋ"},      // before 丁戊
+              {"丁戊", "ㄉㄧㄥ-ㄨˋ"},      // was first, now second: moves back
+              {"有 空", "ㄧㄡˇ-ㄎㄨㄥ"}});  // not a column
+  EXPECT_EQ(learned, (Phrases{{"乙丙", "ㄧˇ-ㄅㄧㄥˇ"},
+                              {"丁午", "ㄉㄧㄥ-ㄨˋ"},
+                              {"丁戊", "ㄉㄧㄥ-ㄨˋ"}}));
+  EXPECT_EQ(readFile(data_),
+            "# header\n丁戊 ㄉㄧㄥ-ㄨˋ\n丁午 ㄉㄧㄥ-ㄨˋ\n乙丙 ㄧˇ-ㄅㄧㄥˇ\n");
+}
+
+TEST_F(UserPhraseFileTest, LearnSeveralWritesNothingWhenNothingIsLearned) {
+  writeFile(data_, "乙丙 ㄧˇ-ㄅㄧㄥˇ\n");
+  writeFile(exclude_, "");
+  auto before = fs::last_write_time(data_);
+  using Phrases = std::vector<std::pair<std::string, std::string>>;
+  EXPECT_TRUE(UserPhraseFile::learn(data_, exclude_,
+                                    Phrases{{"乙丙", "ㄧˇ-ㄅㄧㄥˇ"}})
+                  .empty());
+  EXPECT_TRUE(UserPhraseFile::learn(data_, exclude_, Phrases{}).empty());
+  EXPECT_EQ(fs::last_write_time(data_), before);
+  EXPECT_EQ(readFile(data_), "乙丙 ㄧˇ-ㄅㄧㄥˇ\n");
+}
+
+TEST_F(UserPhraseFileTest, LearnSeveralNeedsTheDataFile) {
+  writeFile(exclude_, "");
+  using Phrases = std::vector<std::pair<std::string, std::string>>;
+  EXPECT_TRUE(UserPhraseFile::learn(data_, exclude_,
+                                    Phrases{{"乙丙", "ㄧˇ-ㄅㄧㄥˇ"}})
+                  .empty());
+  EXPECT_FALSE(fs::exists(data_));
+
+  writeFile(data_, "");
+  makeUnreadable(exclude_);
+  EXPECT_TRUE(UserPhraseFile::learn(data_, exclude_,
+                                    Phrases{{"乙丙", "ㄧˇ-ㄅㄧㄥˇ"}})
+                  .empty());
+  EXPECT_EQ(readFile(data_), "");
+}
+
+TEST_F(UserPhraseFileTest, FitsInColumn) {
+  EXPECT_TRUE(UserPhraseFile::fitsInColumn("許氏"));
+  EXPECT_FALSE(UserPhraseFile::fitsInColumn(""));
+  EXPECT_FALSE(UserPhraseFile::fitsInColumn("許 氏"));
+  EXPECT_FALSE(UserPhraseFile::fitsInColumn("許\t氏"));
+  EXPECT_FALSE(UserPhraseFile::fitsInColumn("許\n"));
+  EXPECT_FALSE(UserPhraseFile::fitsInColumn("許\u3000氏"));
+  EXPECT_FALSE(UserPhraseFile::fitsInColumn("許\u00A0氏"));
 }
 
 // MARK: - write
