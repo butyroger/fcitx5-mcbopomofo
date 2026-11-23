@@ -7,6 +7,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 add_library(SmartLearningLib
         AtomicFile.h
         AtomicFile.cpp
+        EnglishWords.h
+        EnglishWords.cpp
         LearningPaths.h
         LearningPaths.cpp
         MixedInput.h
@@ -25,6 +27,7 @@ if (ENABLE_TEST)
 
         add_executable(SmartLearningLibTest
                 AtomicFileTest.cpp
+                EnglishWordsTest.cpp
                 LearningPathsTest.cpp
                 MixedInputTest.cpp
                 UserDataFolderTest.cpp
