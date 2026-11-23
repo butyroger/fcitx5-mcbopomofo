@@ -12,11 +12,11 @@
 - 結果：
 
 ## 2. 英文與中文混打結果與 Mac 相同
-- `app`：打完直接輸出 app 或對應的英文處理，與 Mac 比對。
+- `app`：標準鍵盤打 `app`，組字緩衝區應以英文顯示 `app`，與 Mac 比對。
 - `you` + 空白：You／you 的結果與 Mac 相同。
 - `ChatGPT`：保持 ChatGPT 大小寫。
 - 許氏：`hello` 再 `hwf` → hello 好。標準：`hello` 再 `cl3`。
-- 許氏：`PDF` 再 `dk` + `f` → PDF 黨／檔（第一候選依資料而定，兩者皆可）。標準：`PDF` 再 `2;3`。
+- 許氏：`PDF` 再 `dk` + `f` → 「PDF 黨」（黨是隨附資料中的第一候選；要選「檔」請從候選字窗挑選）。標準：`PDF` 再 `2;3`。
 - 結果：
 
 ## 3. 自動空白與 Backspace
@@ -43,7 +43,7 @@
 
 ## 7. 圖示與 Caps Lock 提醒
 - 中／英圖示隨切換改變；全／半圖示隨切換改變。
-- 按 Caps Lock：是否跳出提醒？請記錄實測結果（UNKNOWN 5）。目前設定 `capsLockAllowChineseInput=False`。
+- 按 Caps Lock：是否跳出提醒？目前還不確定桌面會不會把 Caps Lock 鍵送給輸入法，請記錄實際結果。目前設定 `capsLockAllowChineseInput=False`。
 - 結果：
 
 ## 8. 學習到的英文字詞
