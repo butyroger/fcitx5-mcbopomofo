@@ -415,6 +415,8 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::unique_ptr<fcitx::SimpleAction> halfWidthPunctuationAction_;
   std::unique_ptr<fcitx::SimpleAction> chineseEnglishModeAction_;
   bool capsLockOn_ = false;
+  // False after (de)activation until a key event tells the Caps Lock state.
+  bool capsLockKnown_ = false;
   std::unique_ptr<fcitx::SimpleAction> associatedPhrasesAction_;
   std::unique_ptr<fcitx::SimpleAction> bopomofoFontAnnotationSupportAction_;
   std::unique_ptr<fcitx::SimpleAction> editUserPhrasesAction_;

@@ -799,6 +799,7 @@ void McBopomofoEngine::updateChineseEnglishIcon(
 void McBopomofoEngine::refreshModeIcons(fcitx::InputContext* context) {
   auto& statusArea = context->statusArea();
   if (config_.showChineseEnglishModeIcon.value()) {
+    // Also shown in Plain mode, where it reflects Caps Lock only.
     updateChineseEnglishIcon(context);
     statusArea.addAction(fcitx::StatusGroup::InputMethod,
                          chineseEnglishModeAction_.get());
@@ -824,6 +825,10 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   if (mode != keyHandler_->inputMode()) {
     languageModelLoader_->loadModelForMode(mode);
   }
+
+  // fcitx does not expose the Caps Lock state here, so the first key event
+  // adopts it as the baseline without a reminder.
+  capsLockKnown_ = false;
 
   chttrans();
 
@@ -945,6 +950,7 @@ void McBopomofoEngine::deactivate(const fcitx::InputMethodEntry& entry,
                                   fcitx::InputContextEvent& event) {
   // Commits what is being typed, which records the English words in it.
   fcitx::InputMethodEngine::deactivate(entry, event);
+  capsLockKnown_ = false;
   saveLearning();
 }
 
@@ -999,8 +1005,11 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
   // The Caps Lock state only exists in the raw key. Whatever key event
   // arrives tells whether it changed.
   bool capsLockNow = keyEvent.rawKey().states() & fcitx::KeyState::CapsLock;
+  bool capsLockWasKnown = capsLockKnown_;
+  capsLockKnown_ = true;
   if (capsLockNow != capsLockOn_) {
-    auto reminder = SmartLearning::SwitchReminderText(capsLockOn_, capsLockNow);
+    auto reminder = SmartLearning::SwitchReminderText(
+        capsLockWasKnown, capsLockOn_, capsLockNow);
     capsLockOn_ = capsLockNow;
     updateChineseEnglishIcon(keyEvent.inputContext());
     if (reminder && config_.chineseEnglishSwitchReminderEnabled.value() &&

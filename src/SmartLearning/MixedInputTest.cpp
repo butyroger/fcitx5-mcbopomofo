@@ -86,10 +86,27 @@ TEST(MixedInputTest, ModeLabels) {
 }
 
 TEST(MixedInputTest, SwitchReminderOnlyWhenCapsLockChanges) {
-  EXPECT_FALSE(SwitchReminderText(false, false).has_value());
-  EXPECT_FALSE(SwitchReminderText(true, true).has_value());
-  EXPECT_EQ(SwitchReminderText(false, true), "ABC");
-  EXPECT_EQ(SwitchReminderText(true, false), "中文");
+  EXPECT_FALSE(SwitchReminderText(true, false, false).has_value());
+  EXPECT_FALSE(SwitchReminderText(true, true, true).has_value());
+  EXPECT_EQ(SwitchReminderText(true, false, true), "ABC");
+  EXPECT_EQ(SwitchReminderText(true, true, false), "中文");
+}
+
+TEST(MixedInputTest, SwitchReminderSkipsTheFirstStateAfterActivation) {
+  // Caps Lock is already on at the first event: adopt it, no tip.
+  bool known = false;
+  bool caps = false;
+  auto step = [&](bool now) {
+    auto r = SwitchReminderText(known, caps, now);
+    caps = now;
+    known = true;
+    return r;
+  };
+  EXPECT_FALSE(step(true).has_value());
+  EXPECT_FALSE(step(true).has_value());
+  EXPECT_EQ(step(false), "中文");
+  EXPECT_FALSE(step(false).has_value());
+  EXPECT_EQ(step(true), "ABC");
 }
 
 }  // namespace McBopomofo::SmartLearning

@@ -56,8 +56,10 @@ std::string LanguageModeLabel(bool capsLockOn, bool smartEnglish);
 
 // The reminder to show when the Caps Lock state goes from |previous| to
 // |current|: "ABC" when it turns on, "中文" when it turns off, nothing when it
-// did not change.
-std::optional<std::string> SwitchReminderText(bool previous, bool current);
+// did not change. While the state is not |known| yet (right after activation),
+// the first state is only adopted as the baseline, so nothing is shown.
+std::optional<std::string> SwitchReminderText(bool known, bool previous,
+                                              bool current);
 
 // "半" for half width, else "全".
 std::string WidthModeLabel(bool halfWidth);
