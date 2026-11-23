@@ -1,8 +1,10 @@
 #include "AtomicFile.h"
 
 #include <gtest/gtest.h>
+#include <sys/resource.h>
 
 #include <chrono>
+#include <csignal>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -67,6 +69,54 @@ TEST_F(AtomicFileTest, FailedRenameCleansTempFile) {
   fs::create_directories(path / "inner");
   EXPECT_FALSE(writeFileAtomically(path, "x"));
   EXPECT_EQ(entryCount(), 1u);
+}
+
+// Limits the size of files this process may write, so that writes fail with
+// EFBIG (this also applies to root). Restores the limit on destruction.
+class FileSizeLimit {
+ public:
+  explicit FileSizeLimit(rlim_t bytes) {
+    getrlimit(RLIMIT_FSIZE, &old_);
+    oldHandler_ = std::signal(SIGXFSZ, SIG_IGN);
+    rlimit limit = old_;
+    limit.rlim_cur = bytes;
+    ok_ = setrlimit(RLIMIT_FSIZE, &limit) == 0;
+  }
+  ~FileSizeLimit() {
+    setrlimit(RLIMIT_FSIZE, &old_);
+    std::signal(SIGXFSZ, oldHandler_);
+  }
+  bool ok() const { return ok_; }
+
+ private:
+  rlimit old_{};
+  void (*oldHandler_)(int) = nullptr;
+  bool ok_ = false;
+};
+
+TEST_F(AtomicFileTest, FailedWriteKeepsOldFileAndCleansTempFile) {
+  auto path = folder_ / "a.txt";
+  ASSERT_TRUE(writeFileAtomically(path, "old"));
+  bool written = true;
+  {
+    FileSizeLimit limit(16);
+    ASSERT_TRUE(limit.ok());
+    written = writeFileAtomically(path, std::string(64 * 1024, 'x'));
+  }
+  EXPECT_FALSE(written);
+  EXPECT_EQ(slurp(path), "old");
+  EXPECT_EQ(entryCount(), 1u);
+}
+
+TEST_F(AtomicFileTest, CreateFileIfAbsentFailsOnShortWrite) {
+  auto p = folder_ / "data.txt";
+  bool created = true;
+  {
+    FileSizeLimit limit(16);
+    ASSERT_TRUE(limit.ok());
+    created = createFileIfAbsent(p, std::string(64 * 1024, 'x'));
+  }
+  EXPECT_FALSE(created);
 }
 
 TEST_F(AtomicFileTest, CreateFileIfAbsentCreatesNewFile) {

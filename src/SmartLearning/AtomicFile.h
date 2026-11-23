@@ -6,9 +6,10 @@
 
 namespace McBopomofo::SmartLearning {
 
-// Writes |content| to a temporary file ".<name>.tmp-<pid>" next to |path| and
-// renames it over |path|. Returns false on any failure; the temporary file is
-// removed in that case.
+// Writes |content| to a temporary file ".<name>.tmp-<pid>" next to |path|,
+// syncs it to disk, and renames it over |path| only if the write, the sync and
+// the close all succeeded. Returns false on any failure; the temporary file is
+// removed in that case and |path| is left as it was.
 bool writeFileAtomically(const std::filesystem::path& path,
                          std::string_view content);
 
