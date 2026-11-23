@@ -572,14 +572,14 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   void refreshFloatingCompositionAction(fcitx::InputContext* context);
   void toggleFloatingComposition(fcitx::InputContext* context);
 
-  // Switches to |layout| from the menu: saves it, drops any composing text
-  // without committing, and tells the user.
   // Opens the text templates or the symbol table file at |path| with the
   // configured program, creating it first in the default folder (|create|
   // writes it); a missing file elsewhere is only told about.
   void openUserFile(const std::filesystem::path& path,
                     const std::function<void()>& create);
 
+  // Switches to |layout| from the menu: saves it, drops any composing text
+  // without committing, and tells the user.
   void selectQuickLayout(fcitx::InputContext* context,
                          BopomofoKeyboardLayout layout, const char* title);
   void showUserDataFolderWarning();

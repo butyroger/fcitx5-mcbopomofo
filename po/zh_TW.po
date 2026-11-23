@@ -824,3 +824,7 @@ msgstr "使用說明"
 #: src/McBopomofo.cpp
 msgid "About McBopomofo…"
 msgstr "關於小麥注音…"
+
+#: src/McBopomofo.h
+msgid "User data folder (shared with other computers)"
+msgstr "詞庫資料夾（與其他電腦共用）"
