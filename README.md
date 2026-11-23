@@ -9,13 +9,24 @@
 - 可在 fcitx5 設定中指定「User data folder」（用戶資料夾），指向同步資料夾即可與 Mac 共用詞庫與學習紀錄。使用者自選的資料夾裡不會自動建立範本檔；若資料夾尚未同步完成，會顯示等待同步的提示。
 - 預設值與作者的 Mac 設定相同：許氏鍵盤、選字鍵 `asdfghjkl`、直式候選字窗等。
 
+## 中英混打與輸入輔助（learning.2）
+
+- 智慧中英切換：英文字母後面可直接接著打中文，不需先切換輸入法；英文與中文之間會自動補空白（例如「你好 hello」「用 iPhone 拍」），按 Backspace 刪光英文時，自動補的空白會一起消失。
+- 英文大小寫自動修正：依內建英文字典與學習到的英文字詞修正，例如 `iphone` 加空白變成 iPhone；按 Enter 直接送出則保留原本輸入的小寫。
+- 學習英文字詞：打過兩次以上的英文字會記錄在用戶資料夾的 `learning/english/`，並隨同步資料夾在各裝置間共用。
+- 標點：英文或數字之後的標點使用半形（例如「價格是300.」），中文之後維持全形（例如「好，」）。
+- Esc 修剪：組字中按一次 Esc 清除最後打錯的亂碼，連按兩次清除全部。
+- 狀態圖示：提供「中／英」與「全／半」圖示；開啟 Caps Lock 時會有提醒。
+- 狀態列選單可快速切換標準鍵盤與許氏鍵盤，切換後立即生效。
+- 新增相依套件 `wamerican`（英文字典），安裝時由 apt 自動帶入。
+
 ## 安裝（Ubuntu 24.04／Linux Mint 22）
 
 先安裝 fcitx5 與本套件（`.deb` 檔請至專案的 Releases 頁面下載，以下以下載到目前目錄為例）：
 
 ```bash
 sudo apt update
-sudo apt install fcitx5 fcitx5-config-qt ./fcitx5-mcbopomofo-smart-learning_3.1.1-learning.1_amd64.deb
+sudo apt install fcitx5 fcitx5-config-qt ./fcitx5-mcbopomofo-smart-learning_3.1.1-learning.2_amd64.deb
 im-config -n fcitx5
 ```
 
