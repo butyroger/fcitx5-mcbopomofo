@@ -8,8 +8,7 @@ namespace {
 bool hasWhiteSpace(const std::string& s) {
   for (size_t i = 0; i < s.size(); ++i) {
     unsigned char c = static_cast<unsigned char>(s[i]);
-    if (c == ' ' || (c >= '\t' && c <= '\r') || c == 0x1c || c == 0x1d ||
-        c == 0x1e || c == 0x1f) {
+    if (c == ' ' || (c >= '\t' && c <= '\r')) {
       return true;
     }
     if (c == 0xC2 && i + 1 < s.size()) {

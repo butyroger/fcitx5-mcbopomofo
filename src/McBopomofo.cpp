@@ -1433,6 +1433,10 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
       // Enter selecting dictionary service state.
       if (keyHandler_->hasDictionaryServices()) {
         size_t selectedCandidateIndex = candidateList->globalCursorIndex();
+        if (selectedCandidateIndex >= choosingCandidate->candidates.size()) {
+          errorCallback();
+          return true;
+        }
         std::string reading =
             choosingCandidate->candidates[selectedCandidateIndex].reading;
 
