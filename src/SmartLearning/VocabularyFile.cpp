@@ -52,6 +52,10 @@ bool replaceOrAppendLine(const std::filesystem::path& path,
     std::vector<std::string> lines = linesOf(*content);
     auto it = std::find(lines.begin(), lines.end(), *oldLine);
     if (it != lines.end()) {
+      if (*it == newLine) {
+        // Saved unchanged: nothing to write.
+        return true;
+      }
       *it = newLine;
       return writeFileAtomically(path, join(lines));
     }
@@ -86,6 +90,11 @@ bool removeLines(const std::filesystem::path& path,
       continue;
     }
     kept.push_back(std::move(line));
+  }
+  if (remaining.size() == lines.size()) {
+    // Nothing matched: the file, which may be shared and synced, is left
+    // untouched.
+    return true;
   }
   return writeFileAtomically(path, join(kept));
 }

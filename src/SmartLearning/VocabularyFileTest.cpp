@@ -1,6 +1,7 @@
 #include "VocabularyFile.h"
 
 #include <gtest/gtest.h>
+#include <sys/stat.h>
 
 #include <chrono>
 #include <filesystem>
@@ -124,6 +125,30 @@ TEST_F(VocabularyFileTest, RemoveLineThatIsNotThereChangesNothing) {
   writeFile(path_, "甲 ㄅ\n");
   EXPECT_TRUE(removeLines(path_, {"沒有 ㄈ"}));
   EXPECT_EQ(readFile(path_), "甲 ㄅ\n");
+}
+
+TEST_F(VocabularyFileTest, ReplaceWithTheSameLineDoesNotWrite) {
+  writeFile(path_, "甲 ㄅ\n乙 ㄆ");
+  struct stat before {};
+  ASSERT_EQ(::stat(path_.c_str(), &before), 0);
+  EXPECT_TRUE(replaceOrAppendLine(path_, "甲 ㄅ", "甲 ㄅ"));
+  struct stat after {};
+  ASSERT_EQ(::stat(path_.c_str(), &after), 0);
+  EXPECT_EQ(before.st_ino, after.st_ino);
+  EXPECT_EQ(readFile(path_), "甲 ㄅ\n乙 ㄆ");
+}
+
+TEST_F(VocabularyFileTest, RemoveNothingMatchedDoesNotWrite) {
+  // No final line break, which a rewrite would add.
+  writeFile(path_, "甲 ㄅ\r\n乙 ㄆ");
+  struct stat before {};
+  ASSERT_EQ(::stat(path_.c_str(), &before), 0);
+  EXPECT_TRUE(removeLines(path_, {"沒有 ㄈ", "甲 ㄅ ㄅ"}));
+  struct stat after {};
+  ASSERT_EQ(::stat(path_.c_str(), &after), 0);
+  // An atomic write would replace the file with a new one.
+  EXPECT_EQ(before.st_ino, after.st_ino);
+  EXPECT_EQ(readFile(path_), "甲 ㄅ\r\n乙 ㄆ");
 }
 
 }  // namespace McBopomofo::SmartLearning::VocabularyFile
