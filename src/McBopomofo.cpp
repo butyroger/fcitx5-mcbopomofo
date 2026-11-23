@@ -38,6 +38,7 @@
 #include <chrono>
 #include <ctime>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -45,6 +46,7 @@
 #include <utility>
 #include <vector>
 
+#include "AtomicFile.h"
 #include "CandidateAdjustment.h"
 #include "FloatingComposition.h"
 #include "Format.h"
@@ -718,7 +720,7 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
                              languageModelLoader_->userPhrasesPath()});
       });
   instance_->userInterfaceManager().registerAction(
-      "mcbopomofo-user-phrases-edit", editUserPhrasesAction_.get());
+      kEditUserPhrasesAction, editUserPhrasesAction_.get());
 
   excludedPhrasesAction_ = std::make_unique<fcitx::SimpleAction>();
   excludedPhrasesAction_->setShortText(_("Edit Excluded Phrases"));
@@ -728,7 +730,7 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
                              languageModelLoader_->excludedPhrasesPath()});
       });
   instance_->userInterfaceManager().registerAction(
-      "mcbopomofo-user-excluded-phrases-edit", excludedPhrasesAction_.get());
+      kEditExcludedPhrasesAction, excludedPhrasesAction_.get());
 
   if constexpr (kHasVocabularyManager) {
     manageVocabularyAction_ = std::make_unique<fcitx::SimpleAction>();
@@ -741,7 +743,7 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
               config_.deviceID.value()));
         });
     instance_->userInterfaceManager().registerAction(
-        "mcbopomofo-manage-vocabulary", manageVocabularyAction_.get());
+        kManageVocabularyAction, manageVocabularyAction_.get());
   }
 
   floatingCompositionAction_ = std::make_unique<fcitx::SimpleAction>();
@@ -753,7 +755,61 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
         toggleFloatingComposition(context);
       });
   instance_->userInterfaceManager().registerAction(
-      "mcbopomofo-floating-composition", floatingCompositionAction_.get());
+      kFloatingCompositionAction, floatingCompositionAction_.get());
+
+  editTextTemplatesAction_ = std::make_unique<fcitx::SimpleAction>();
+  editTextTemplatesAction_->setShortText(_("Edit Text Templates"));
+  editTextTemplatesAction_->connect<fcitx::SimpleAction::Activated>(
+      [this](fcitx::InputContext*) {
+        if (languageModelLoader_->userDataPath().empty()) {
+          return;
+        }
+        openUserFile(
+            std::filesystem::path(languageModelLoader_->userDataPath()) /
+                "text-templates.txt",
+            [this] { textTemplateStore_->createSampleFileIfNeeded(); });
+      });
+  instance_->userInterfaceManager().registerAction(
+      kEditTextTemplatesAction, editTextTemplatesAction_.get());
+
+  editSymbolTableAction_ = std::make_unique<fcitx::SimpleAction>();
+  editSymbolTableAction_->setShortText(_("Edit Symbol Table"));
+  editSymbolTableAction_->connect<fcitx::SimpleAction::Activated>(
+      [this](fcitx::InputContext*) {
+        if (languageModelLoader_->userDataPath().empty()) {
+          return;
+        }
+        std::filesystem::path path =
+            std::filesystem::path(languageModelLoader_->userDataPath()) /
+            "symbol-table.txt";
+        // The built-in table, for the user to start from.
+        openUserFile(path, [path] {
+          SmartLearning::createFileIfAbsent(
+              path, SmartLearning::BuiltInSymbolTable());
+        });
+      });
+  instance_->userInterfaceManager().registerAction(
+      kEditSymbolTableAction, editSymbolTableAction_.get());
+
+  userGuideAction_ = std::make_unique<fcitx::SimpleAction>();
+  userGuideAction_->setShortText(_("User Guide"));
+  userGuideAction_->connect<fcitx::SimpleAction::Activated>(
+      [](fcitx::InputContext*) {
+        fcitx::startProcess({"xdg-open", userGuideURL(kUserGuidePath)});
+      });
+  instance_->userInterfaceManager().registerAction(kUserGuideAction,
+                                                   userGuideAction_.get());
+
+  // There is no about panel; the user guide has a section for it.
+  aboutAction_ = std::make_unique<fcitx::SimpleAction>();
+  aboutAction_->setShortText(_("About McBopomofo…"));
+  aboutAction_->connect<fcitx::SimpleAction::Activated>(
+      [](fcitx::InputContext*) {
+        fcitx::startProcess(
+            {"xdg-open", userGuideURL(kUserGuidePath, "about")});
+      });
+  instance_->userInterfaceManager().registerAction(kAboutAction,
+                                                   aboutAction_.get());
 }
 
 McBopomofoEngine::~McBopomofoEngine() {
@@ -1076,6 +1132,35 @@ void McBopomofoEngine::toggleFloatingComposition(
   refreshFloatingCompositionAction(context);
 }
 
+void McBopomofoEngine::openUserFile(const std::filesystem::path& path,
+                                    const std::function<void()>& create) {
+  std::error_code ec;
+  bool exists = std::filesystem::exists(path, ec);
+  bool mayCreate = SmartLearning::shouldCreateTemplateFiles(
+      path.parent_path(), languageModelLoader_->defaultUserDataPath());
+  switch (userFileOpening(exists, mayCreate)) {
+    case UserFileOpening::CreateThenOpen:
+      create();
+      [[fallthrough]];
+    case UserFileOpening::Open:
+      fcitx::startProcess({GetOpenFileWith(config_), path.string()});
+      break;
+    case UserFileOpening::NotFound:
+      // Not created: the file of another computer may be on its way.
+      if (notifications()) {
+        notifications()->call<fcitx::INotifications::showTip>(
+            "mcbopomofo-user-file-not-found", _("McBopomofo"),
+            "fcitx_mcbopomofo", path.filename().string(),
+            _("The file was not found. The vocabulary folder may still be "
+              "syncing."),
+            kFcitx5NotificationTimeoutInMs);
+      } else {
+        FCITX_MCBOPOMOFO_ERROR() << path << " was not found";
+      }
+      break;
+  }
+}
+
 void McBopomofoEngine::refreshLayoutActions(fcitx::InputContext* context) {
   auto configured = config_.bopomofoKeyboardLayout.value();
   layoutStandardAction_->setChecked(
@@ -1200,18 +1285,16 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
         bopomofoFontAnnotationSupportAction_.get());
   }
 
-  if (mode == McBopomofo::InputMode::McBopomofo) {
-    inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
-                                         editUserPhrasesAction_.get());
-    inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
-                                         excludedPhrasesAction_.get());
+  for (const auto& name :
+       userFileAndHelpMenuActions(mode, kHasVocabularyManager)) {
+    if (name == kFloatingCompositionAction) {
+      refreshFloatingCompositionAction(inputContext);
+    } else if (auto* action =
+                   instance_->userInterfaceManager().lookupAction(name)) {
+      inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
+                                           action);
+    }
   }
-  // In both input modes.
-  if (manageVocabularyAction_) {
-    inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
-                                         manageVocabularyAction_.get());
-  }
-  refreshFloatingCompositionAction(inputContext);
 
   keyHandler_->setInputMode(mode);
 

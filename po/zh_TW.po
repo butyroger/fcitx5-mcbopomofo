@@ -692,7 +692,7 @@ msgstr "已儲存。"
 msgid "Deleted %1."
 msgstr "已刪除 %1 筆。"
 
-#: src/VocabularyManager/MainWindow.cpp
+#: src/VocabularyManager/MainWindow.cpp src/McBopomofo.cpp
 msgid "The file was not found. The vocabulary folder may still be syncing."
 msgstr "找不到檔案，詞庫資料夾可能還在同步"
 
@@ -808,3 +808,19 @@ msgstr "「{0}」已使用浮動組字窗"
 #: src/McBopomofo.cpp
 msgid "Floating composition window off for {0}"
 msgstr "「{0}」已停用浮動組字窗"
+
+#: src/McBopomofo.cpp
+msgid "Edit Text Templates"
+msgstr "編輯文字範本"
+
+#: src/McBopomofo.cpp
+msgid "Edit Symbol Table"
+msgstr "編輯符號表"
+
+#: src/McBopomofo.cpp
+msgid "User Guide"
+msgstr "使用說明"
+
+#: src/McBopomofo.cpp
+msgid "About McBopomofo…"
+msgstr "關於小麥注音…"

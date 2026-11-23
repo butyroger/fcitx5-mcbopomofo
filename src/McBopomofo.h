@@ -37,6 +37,8 @@
 #include <fcitx/instance.h>
 #include <fcitx-utils/event.h>
 
+#include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -119,6 +121,72 @@ inline std::vector<std::string> vocabularyManagerCommand(
     command.insert(command.end(), {"--device-id", deviceID});
   }
   return command;
+}
+
+// The user guide, installed with the input method.
+#ifdef MCBOPOMOFO_USER_GUIDE_PATH
+inline constexpr char kUserGuidePath[] = MCBOPOMOFO_USER_GUIDE_PATH;
+#else
+inline constexpr char kUserGuidePath[] =
+    "/usr/share/fcitx5-mcbopomofo/user-guide.html";
+#endif
+
+// The address that opens the user guide at |path|, at |section| (the id of a
+// section, such as "about") if it is not empty.
+inline std::string userGuideURL(const std::string& path,
+                                const std::string& section = "") {
+  std::string url = "file://" + path;
+  if (!section.empty()) {
+    url += "#" + section;
+  }
+  return url;
+}
+
+// The names the menu items are registered by.
+inline constexpr char kEditUserPhrasesAction[] = "mcbopomofo-user-phrases-edit";
+inline constexpr char kEditExcludedPhrasesAction[] =
+    "mcbopomofo-user-excluded-phrases-edit";
+inline constexpr char kManageVocabularyAction[] =
+    "mcbopomofo-manage-vocabulary";
+inline constexpr char kEditTextTemplatesAction[] =
+    "mcbopomofo-text-templates-edit";
+inline constexpr char kEditSymbolTableAction[] = "mcbopomofo-symbol-table-edit";
+inline constexpr char kFloatingCompositionAction[] =
+    "mcbopomofo-floating-composition";
+inline constexpr char kUserGuideAction[] = "mcbopomofo-user-guide";
+inline constexpr char kAboutAction[] = "mcbopomofo-about";
+
+// The menu items after the input options, in menu order, in |mode|. The user
+// phrase files of Plain Bopomofo are not edited from the menu; the text
+// templates and the symbol table are the same files in both modes. The
+// floating composition item is listed, but is shown only for a program with a
+// name.
+inline std::vector<std::string> userFileAndHelpMenuActions(
+    InputMode mode, bool hasVocabularyManager) {
+  std::vector<std::string> names;
+  if (mode == InputMode::McBopomofo) {
+    names.insert(names.end(),
+                 {kEditUserPhrasesAction, kEditExcludedPhrasesAction});
+  }
+  if (hasVocabularyManager) {
+    names.emplace_back(kManageVocabularyAction);
+  }
+  names.insert(names.end(),
+               {kEditTextTemplatesAction, kEditSymbolTableAction,
+                kFloatingCompositionAction, kUserGuideAction, kAboutAction});
+  return names;
+}
+
+// What the menu does with a user file asked to be opened: a missing file is
+// created first where that is allowed (the default folder), and otherwise not
+// found, as it may not have been synced yet.
+enum class UserFileOpening { Open, CreateThenOpen, NotFound };
+inline UserFileOpening userFileOpening(bool exists, bool mayCreate) {
+  if (exists) {
+    return UserFileOpening::Open;
+  }
+  return mayCreate ? UserFileOpening::CreateThenOpen
+                   : UserFileOpening::NotFound;
 }
 
 enum class SelectionKeys {
@@ -369,8 +437,8 @@ FCITX_CONFIGURATION(
 
     fcitx::ExternalOption userManual{
         this, "UserManual", _("User Manual"),
-        "xdg-open "
-        "\"https://github.com/openvanilla/fcitx5-mcbopomofo/wiki/使用手冊\""};
+        fcitx::stringutils::concat("xdg-open \"", userGuideURL(kUserGuidePath),
+                                   "\"")};
 
     fcitx::ExternalOption webTools{
         this, "WebTools", _("Web Tools"),
@@ -496,8 +564,6 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   // Makes the standard/Hsu menu items' checked state follow the configured
   // layout.
   void refreshLayoutActions(fcitx::InputContext* context);
-  // Switches to |layout| from the menu: saves it, drops any composing text
-  // without committing, and tells the user.
   // Whether to put the text being composed into the program of |context|,
   // rather than into the input method panel.
   bool useClientPreedit(fcitx::InputContext* context) const;
@@ -505,6 +571,14 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   // checked when that program uses it.
   void refreshFloatingCompositionAction(fcitx::InputContext* context);
   void toggleFloatingComposition(fcitx::InputContext* context);
+
+  // Switches to |layout| from the menu: saves it, drops any composing text
+  // without committing, and tells the user.
+  // Opens the text templates or the symbol table file at |path| with the
+  // configured program, creating it first in the default folder (|create|
+  // writes it); a missing file elsewhere is only told about.
+  void openUserFile(const std::filesystem::path& path,
+                    const std::function<void()>& create);
 
   void selectQuickLayout(fcitx::InputContext* context,
                          BopomofoKeyboardLayout layout, const char* title);
@@ -560,6 +634,10 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   // Only when the vocabulary manager is built.
   std::unique_ptr<fcitx::SimpleAction> manageVocabularyAction_;
   std::unique_ptr<fcitx::SimpleAction> floatingCompositionAction_;
+  std::unique_ptr<fcitx::SimpleAction> editTextTemplatesAction_;
+  std::unique_ptr<fcitx::SimpleAction> editSymbolTableAction_;
+  std::unique_ptr<fcitx::SimpleAction> userGuideAction_;
+  std::unique_ptr<fcitx::SimpleAction> aboutAction_;
 };
 
 class McBopomofoEngineFactory : public fcitx::AddonFactory {

@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>小麥注音使用說明</title>
+<style>
+:root {
+  --bg: #fbfaf7;
+  --fg: #1f2328;
+  --muted: #5f6670;
+  --line: #e3e0d8;
+  --card: #ffffff;
+  --accent: #1d5fa8;
+  --key-bg: #f1efe9;
+  --key-border: #c9c4b8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1b1c1f;
+    --fg: #e8e6e1;
+    --muted: #9ea3aa;
+    --line: #34363b;
+    --card: #232428;
+    --accent: #6ea8ec;
+    --key-bg: #2d2f34;
+    --key-border: #4a4d54;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 16px/1.75 system-ui, "Noto Sans CJK TC", sans-serif;
+}
+a { color: var(--accent); }
+.layout { display: flex; max-width: 1080px; margin: 0 auto; }
+nav {
+  position: sticky; top: 0; align-self: flex-start;
+  width: 220px; flex-shrink: 0; height: 100vh; overflow-y: auto;
+  padding: 32px 16px 32px 24px; border-right: 1px solid var(--line);
+  font-size: 14px;
+}
+nav h2 { font-size: 13px; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+nav a { display: block; color: var(--fg); text-decoration: none; padding: 3px 0; }
+nav a:hover { color: var(--accent); }
+main { flex: 1; min-width: 0; padding: 32px 40px 80px; }
+h1 { font-size: 30px; margin: 0 0 4px; }
+.subtitle { color: var(--muted); margin: 0 0 32px; }
+section { border-top: 1px solid var(--line); padding-top: 24px; margin-top: 32px; }
+h2 { font-size: 22px; margin: 0 0 12px; }
+h3 { font-size: 17px; margin: 20px 0 6px; }
+p { margin: 8px 0; }
+ul, ol { padding-left: 1.3em; margin: 8px 0; }
+li { margin: 4px 0; }
+kbd {
+  display: inline-block; min-width: 1.6em; padding: 0 6px; text-align: center;
+  font: 13px/1.6 ui-monospace, "DejaVu Sans Mono", monospace;
+  background: var(--key-bg); border: 1px solid var(--key-border);
+  border-bottom-width: 2px; border-radius: 5px;
+}
+code { font: 14px ui-monospace, "DejaVu Sans Mono", monospace; background: var(--key-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+pre {
+  font: 14px/1.6 ui-monospace, "DejaVu Sans Mono", monospace;
+  background: var(--key-bg); padding: 10px 14px; border-radius: 6px; overflow-x: auto;
+}
+.examples { display: grid; gap: 8px; margin: 12px 0; }
+.example {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 14px;
+}
+.example .in { font: 14px ui-monospace, "DejaVu Sans Mono", monospace; color: var(--muted); min-width: 11em; }
+.example .out { font-size: 17px; }
+.note {
+  background: var(--card); border-left: 3px solid var(--accent);
+  padding: 8px 14px; margin: 12px 0; border-radius: 0 6px 6px 0; color: var(--muted);
+}
+.about-name { font-size: 20px; font-weight: 600; margin: 0; }
+.about-version { color: var(--muted); margin: 0 0 12px; }
+@media (max-width: 760px) {
+  .layout { display: block; }
+  nav { position: static; width: auto; height: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 16px; }
+  main { padding: 24px 16px 60px; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+  <h2>目錄</h2>
+  <a href="#install">安裝與設定</a>
+  <a href="#basic">基本操作</a>
+  <a href="#esc">Esc 清除亂碼</a>
+  <a href="#smart-switch">智慧中英切換</a>
+  <a href="#mixed">中英混打細節</a>
+  <a href="#english">英文聯想</a>
+  <a href="#numbers">數字與算式</a>
+  <a href="#sentences">常用句</a>
+  <a href="#candidates">候選字調整</a>
+  <a href="#templates">文字範本</a>
+  <a href="#symbols">符號表與 emoji</a>
+  <a href="#learning">自動學習</a>
+  <a href="#vocabulary">管理詞彙</a>
+  <a href="#floating">浮動組字窗</a>
+  <a href="#mode">中英提示與模式圖示</a>
+  <a href="#settings">偏好設定</a>
+  <a href="#files">詞庫檔案</a>
+  <a href="#shortcuts">快速鍵一覽</a>
+  <a href="#about">關於小麥注音</a>
+</nav>
+<main>
+<h1>小麥注音使用說明</h1>
+<p class="subtitle">智慧學習版（Linux／fcitx5）。從 fcitx 選單的「使用說明」可以再次開啟本頁。</p>
+
+<section id="install">
+<h2>安裝與設定</h2>
+<h3>安裝</h3>
+<p>適用 Ubuntu 24.04 與 Linux Mint 22。下載 <code>.deb</code> 檔後，在下載的資料夾執行：</p>
+<pre>sudo apt update
+sudo apt install fcitx5 fcitx5-config-qt ./fcitx5-mcbopomofo-smart-learning_@MCBOPOMOFO_PACKAGE_VERSION@_amd64.deb
+im-config -n fcitx5</pre>
+<ul>
+  <li>登出再登入後，開啟「Fcitx 5 設定」，在「輸入法」頁籤加入「小麥注音」（自動選字）或「傳統注音」（打一字選一字）。</li>
+  <li>Linux Mint（Cinnamon）不需要額外套件。</li>
+  <li>Ubuntu（GNOME）要另外安裝並啟用 GNOME Shell 擴充套件「Input Method Panel」，候選字窗才會顯示在正確位置：先 <code>sudo apt install gnome-shell-extension-manager</code>，再開啟 Extension Manager 搜尋安裝。</li>
+  <li>本套件會取代原本的 <code>fcitx5-mcbopomofo</code> 套件。</li>
+</ul>
+
+<h3 id="themes">候選字面板主題</h3>
+<p>套件附了兩個候選字面板主題：「小麥注音淺色」（<code>mcbopomofo-light</code>）與「小麥注音深色」（<code>mcbopomofo-dark</code>），配色和 Mac 版的候選字面板相同。主題要自己選用：開啟「Fcitx 5 設定」→「附加元件」→「經典使用者介面」→「設定」：</p>
+<ul>
+  <li><b>淺色</b>：「主題」選「小麥注音淺色」，不勾「跟隨系統淺色/深色設定」。</li>
+  <li><b>深色</b>：「主題」選「小麥注音深色」，不勾「跟隨系統淺色/深色設定」。</li>
+  <li><b>跟隨系統</b>：「主題」選「小麥注音淺色」、「深色模式」選「小麥注音深色」，勾選「跟隨系統淺色/深色設定」。</li>
+  <li>勾選「在主題與桌面支援時使用系統重點色」時，反白的候選字跟著桌面的強調色。</li>
+  <li><b>字級</b>：主題不指定字型，請在同一頁的「字體」設定字型與大小（例如 <code>Noto Sans CJK TC 24</code>）。</li>
+</ul>
+<p class="note">主題是 fcitx 全域的設定，會套用到所有輸入法。面板是直角、沒有毛玻璃效果；選字鍵和候選字同一個字級。Ubuntu GNOME 使用「Input Method Panel」擴充套件時，候選字窗由擴充套件與 GNOME 的主題決定，這兩個主題不適用。</p>
+
+<h3>與 Mac 共用詞庫</h3>
+<p>詞庫資料夾可以指到同步資料夾，和 Mac 或其他 Linux 電腦共用詞彙與學習紀錄。以 Synology Drive 為例：</p>
+<ol>
+  <li>安裝 Synology Drive Client for Linux，建立同步工作，把 NAS 上的 <code>McBopomofo</code> 資料夾同步到本機，例如 <code>~/SynologyDrive/McBopomofo</code>。</li>
+  <li>等第一次同步完成（資料夾內的 <code>data.txt</code> 等檔案都已出現）。</li>
+  <li>在小麥注音的偏好設定把「詞庫資料夾（與其他電腦共用）」設為該資料夾。</li>
+  <li>切換一次輸入法讓設定生效。</li>
+</ol>
+<p class="note">自選的資料夾裡不會自動建立範本檔，以免和還在同步的檔案衝突。資料夾還沒同步完成時，會顯示等待同步的提示。</p>
+</section>
+
+<section id="basic">
+<h2>基本操作</h2>
+<ul>
+  <li>打注音、按聲調（一聲按 <kbd>空白</kbd>）就會組字，打完一句按 <kbd>Enter</kbd> 送出（主鍵盤或數字鍵盤的 Enter 都可以）。</li>
+  <li>選字：游標停在要改的字上，按 <kbd>空白</kbd> 或 <kbd>↓</kbd> 開啟候選字，按選字鍵選字。</li>
+  <li>fcitx 選單（系統匣圖示或面板上的選單）最上方可以直接切換「注音－標準鍵盤」與「注音－許氏鍵盤」。</li>
+  <li>許氏鍵盤的數字鍵不是注音，打中文時直接按數字，數字會跟中文一起留在組字區。</li>
+  <li><kbd>Caps Lock</kbd> 打開時打出的是小寫英文，關掉回到注音。</li>
+  <li>打錯字時按 <kbd>Esc</kbd>：只清掉字尾打錯的亂碼，見下方「<a href="#esc">Esc 清除亂碼</a>」。</li>
+</ul>
+</section>
+
+<section id="esc">
+<h2>Esc 清除亂碼</h2>
+<p>打太快難免會打出一串不是中文、也不是英文的字。按一下 <kbd>Esc</kbd> 只會清掉字尾的亂碼，保留到最後一個完整的中文字或英文單字，不用再一個一個按 Backspace。</p>
+<div class="examples">
+  <div class="example"><span class="in">今天開會 jqvx</span><span class="out">今天開會</span></div>
+  <div class="example"><span class="in">寄給 email 了 ;/z</span><span class="out">寄給 email 了</span></div>
+  <div class="example"><span class="in">hellojkq</span><span class="out">hello</span></div>
+  <div class="example"><span class="in">下午 3 點 ㄒㄧ</span><span class="out">下午 3 點</span></div>
+</div>
+<ul>
+  <li>會清掉的：還沒打完的注音、不成單字的英文字母、字尾的符號和空白。</li>
+  <li>會保留的：中文字、英文單字（英文字典裡有的或打過的字）、數字。</li>
+  <li>英文字母前段是單字時保留單字，例如 <code>hellojkq</code> 留下 <code>hello</code>。</li>
+  <li>清完後組字區下方會提示「再按一次 Esc 清除全部」；<b>連按兩下 <kbd>Esc</kbd></b> 清除整個組字區。</li>
+  <li>字尾沒有亂碼時，第一下只會顯示提示，不會清掉任何字，避免誤刪整句。</li>
+  <li>游標不在最後面時，清的是游標前面的亂碼。</li>
+</ul>
+<p class="note">本功能預設開啟，可在偏好設定關閉「按 ESC 只清除字尾打錯的亂碼」，回到原本的行為。</p>
+</section>
+
+<section id="smart-switch">
+<h2>智慧中英切換</h2>
+<p>不用按 <kbd>Shift</kbd> 或 <kbd>Caps Lock</kbd> 也能中英數混打：打的鍵組不成注音時，會自動變成英文。</p>
+<div class="examples">
+  <div class="example"><span class="in">你用過這個 app?</span><span class="out">你用過這個 app?</span></div>
+  <div class="example"><span class="in">ChatGPT 很好用</span><span class="out">ChatGPT 很好用</span></div>
+  <div class="example"><span class="in">2026 年</span><span class="out">2026年</span></div>
+  <div class="example"><span class="in">ok?</span><span class="out">ok?</span></div>
+</div>
+<h3>什麼時候變成英文</h3>
+<ul>
+  <li>同一個注音位置又按了一次，例如 <code>app</code>（ㄇㄣ 之後又按 ㄣ）。</li>
+  <li>組出來的注音不是字，例如 <code>you</code> 加空白（ㄗㄧㄟ 不是字）。</li>
+  <li>按大寫字母，直接開始英文，例如 <code>ChatGPT</code>。</li>
+  <li>注音還沒打完就接數字或符號，例如 <code>ok?</code>。</li>
+</ul>
+<h3>回到中文</h3>
+<ul>
+  <li>按 <kbd>空白</kbd>、任何符號或 <kbd>Backspace</kbd> 就回到中文。</li>
+  <li>只打了數字時，空白只會回到中文、不插入空白，所以 <code>2026</code> 空白 <code>年</code> 會是「2026年」。</li>
+  <li>英文打完也可以不按空白，直接接著打中文：打完一個字的注音和聲調，就會自動轉回中文，例如 <code>hello</code> 接 <code>ㄏㄠˇ</code> → 「hello 好」、<code>PDF</code> 接 <code>ㄉㄤˇ</code> → 「PDF 檔」。前面要是英文單字（或 PDF 這類大寫縮寫），而且整串不是英文單字或單字的開頭，才會轉換。</li>
+  <li>英文和中文一起留在組字區，按 <kbd>Enter</kbd> 一起送出。</li>
+</ul>
+<p class="note">很短的英文可能剛好是合法注音，例如許氏鍵盤的 <code>a</code> 加空白會打成「疵」，這時請改用 <kbd>Shift</kbd> 或 <kbd>Caps Lock</kbd>。本功能可在偏好設定關閉。</p>
+</section>
+
+<section id="mixed">
+<h2>中英混打細節</h2>
+<h3>中英文之間自動加空格</h3>
+<p>中文後面接英文、英文後面接中文時，自動在中間加一個空格。</p>
+<div class="examples">
+  <div class="example"><span class="in">你好hello</span><span class="out">你好 hello</span></div>
+  <div class="example"><span class="in">用iPhone拍</span><span class="out">用 iPhone 拍</span></div>
+</div>
+<ul>
+  <li>數字不加空格，例如「2026年」「3個」。</li>
+  <li>用 <kbd>Backspace</kbd> 把英文刪光時，自動加的空格也一起刪掉。</li>
+</ul>
+<h3>英文、數字後的標點用半形</h3>
+<p>緊接在英文字母或數字後面的標點自動打半形，接在中文後面的維持全形。</p>
+<div class="examples">
+  <div class="example"><span class="in">價格是300.</span><span class="out">價格是300.</span></div>
+  <div class="example"><span class="in">好,</span><span class="out">好，</span></div>
+</div>
+<p class="note">想在英文、數字後面打全形標點，請按住 <kbd>Ctrl</kbd> 再打標點，例如 <kbd>Ctrl</kbd>+<kbd>,</kbd> 一律是「，」。</p>
+<h3>英文大小寫修正</h3>
+<p>英文打完按 <kbd>空白</kbd> 時，像 iPhone、OpenAI 這類中間有大寫的字，即使打成小寫也會自動改正。</p>
+<div class="examples">
+  <div class="example"><span class="in">iphone <kbd>空白</kbd></span><span class="out">iPhone</span></div>
+  <div class="example"><span class="in">openai <kbd>空白</kbd></span><span class="out">OpenAI</span></div>
+</div>
+<ul>
+  <li>想保留小寫就按 <kbd>Enter</kbd> 送出，不會修正。</li>
+  <li>除了內建的常見字（iPhone、macOS、GitHub、YouTube……），你用大寫打過兩次以上的字（例如 ButyPOS）也會自動修正。</li>
+  <li>只有字首大寫（Apple）或全大寫（NASA）的字不會修正。</li>
+</ul>
+<p class="note">以上三項都可以在偏好設定個別關閉。</p>
+</section>
+
+<section id="english">
+<h2>英文聯想</h2>
+<p>打英文時（或注音還沒打完時）按 <kbd>Tab</kbd>，列出英文單字補完，按選字鍵選。</p>
+<div class="examples">
+  <div class="example"><span class="in">ass <kbd>Tab</kbd></span><span class="out">ass、assad、assam、assay、asses、asset、assoc、assail…</span></div>
+  <div class="example"><span class="in">hel <kbd>Tab</kbd></span><span class="out">hel、held、hell、helm、help、helen、helga、helix、hello…</span></div>
+</div>
+<ul>
+  <li>清單第一個是原本打的字，選它等於不改。</li>
+  <li>打過兩次以上的英文字會排在最前面，例如 ChatGPT。</li>
+  <li>跳著打也找得到打過的字，例如 <code>aocd</code> 找到 associated。</li>
+  <li>英文字典是系統的 <code>/usr/share/dict/american-english</code>（套件 <code>wamerican</code>），加上你打過的字。</li>
+  <li>組字區是空的時候，<kbd>Tab</kbd> 照常交給程式。</li>
+</ul>
+</section>
+
+<section id="numbers">
+<h2>數字與算式</h2>
+<h3>數字快打</h3>
+<p>按 <kbd>`</kbd> 後輸入數字，列出各種格式，按選字鍵或 <kbd>Enter</kbd> 送出。</p>
+<div class="examples">
+  <div class="example"><span class="in">` 2023.09.07</span><span class="out">2023年9月7日（星期四）、二〇二三年九月七日、中華民國112年9月7日、2023/09/07…</span></div>
+  <div class="example"><span class="in">` 112.9.7</span><span class="out">民國年也可以，同上</span></div>
+  <div class="example"><span class="in">` 12:30</span><span class="out">12時30分、下午十二點三十分、下午12點30分、12:30 PM…</span></div>
+  <div class="example"><span class="in">` 6548</span><span class="out">6,548、陸仟伍佰肆拾捌元整、六千五百四十八、6,548元…</span></div>
+  <div class="example"><span class="in">` 10*15/6</span><span class="out">25、10*15/6=25、10×15÷6=25、貳拾伍元整…</span></div>
+</div>
+<h3>中文模式直接算</h3>
+<p>在組字區打算式再按 <kbd>=</kbd>，答案會自動接在後面。全形、半形運算子都可以，數字中間的「。」當小數點。</p>
+<div class="examples">
+  <div class="example"><span class="in">(2+3)*3=</span><span class="out">（2＋3）＊3＝15</span></div>
+  <div class="example"><span class="in">3.5*2=</span><span class="out">3。5＊2＝7</span></div>
+</div>
+</section>
+
+<section id="sentences">
+<h2>常用句</h2>
+<p>同一句送出三次，就會記住這句。之後在句首或標點後打出開頭兩個字以上，組字區下方會提示後半句，按 <kbd>Tab</kbd> 整句接上。</p>
+<div class="examples">
+  <div class="example"><span class="in">謝謝 <kbd>Tab</kbd></span><span class="out">謝謝您的耐心等候</span></div>
+</div>
+<ul>
+  <li>句子要 6 到 40 個字（英文單字算一個字），不能有標點；有標點時會分成幾句分別記。</li>
+  <li>約三個月沒用到會自動忘掉，用得越多次留得越久。</li>
+  <li>記住的句子存在詞庫的 <code>learning/sentences/</code>，多台電腦（Mac 與 Linux）共用。</li>
+  <li>可以在「管理詞彙」的常用句分頁查看、刪除，或直接加入句子（立即生效、不會被遺忘）。偏好設定「記住常打的句子，打出開頭按 Tab 接上」可關閉。</li>
+</ul>
+</section>
+
+<section id="candidates">
+<h2>候選字調整</h2>
+<p>在候選字視窗反白某個字詞時：</p>
+<ul>
+  <li><kbd>+</kbd> 或 <kbd>=</kbd>：提高排序，以後優先出現。</li>
+  <li><kbd>-</kbd> 或 <kbd>_</kbd>：排除，以後不再出現。單字也可以，例如排除「你」，打 ㄋㄧˇ 就會先出現「妳」。</li>
+  <li><kbd>?</kbd>：用辭典查詢。</li>
+</ul>
+<p class="note">提高排序和排除都會先跳出確認；調整的結果可以在「管理詞彙」的中文詞彙、排除詞彙分頁改回來。符號與英文不能調整。</p>
+</section>
+
+<section id="templates">
+<h2>文字範本</h2>
+<ul>
+  <li>按 <kbd>`</kbd> 後輸入代碼，例如地址、帳號等常用文字，按選字鍵或 <kbd>Enter</kbd> 送出。</li>
+  <li>範本放在詞庫資料夾的 <code>text-templates.txt</code>，一行一筆：代碼、Tab、內容，內容要換行請寫 <code>\n</code>。</li>
+  <li>從 fcitx 選單「編輯文字範本」開啟編輯，或在「管理詞彙」的文字範本分頁修改。</li>
+  <li>詞庫在預設資料夾時，第一次使用會建立附範例的檔案；自選的資料夾不會建立，檔案還沒同步過來時，選單會提示「找不到檔案，詞庫資料夾可能還在同步」。</li>
+</ul>
+</section>
+
+<section id="symbols">
+<h2>符號表與 emoji</h2>
+<ul>
+  <li>按兩次 <kbd>`</kbd>（或在範本中再按一次 <kbd>`</kbd>）開啟分類符號表。</li>
+  <li>打完標點按 <kbd>空白</kbd> 或 <kbd>↓</kbd>，也會開啟符號表，反白停在剛打的標點。</li>
+  <li>兩鍵選符號：第一鍵選列（左側標示），第二鍵選格；按 <kbd>Backspace</kbd> 回到選列。</li>
+  <li>內建表情、手勢、愛心、動植物、食物、生活、天氣、符號等 emoji 分類。</li>
+  <li>符號表放在 <code>symbol-table.txt</code>，一行一類：分類名稱、Tab、以空白分隔的符號；從選單「編輯符號表」開啟。檔案不存在時用內建的符號表；在預設資料夾從選單開啟時，會先把內建的符號表寫成檔案，方便修改。</li>
+</ul>
+</section>
+
+<section id="learning">
+<h2>自動學習</h2>
+<ul>
+  <li><b>選字記憶</b>：選過的字會記住前後文，下次同樣的句子優先出現。</li>
+  <li><b>暫存詞</b>：兩個字以上的詞手動選過 1 次，就收進暫存詞，不分前後文都優先出現；30 天沒再用到會自動清除。</li>
+  <li><b>個人詞庫</b>：暫存詞之後再打出來送出一次，就寫進個人詞庫（<code>data.txt</code>），永久生效。</li>
+  <li><b>拆詞學習</b>：內建詞被拆開改字，例如「許是」改成「許氏」，同樣選兩次後會把新詞記下來。</li>
+  <li>學習資料存在詞庫資料夾的 <code>learning/</code>，詞庫放在同步資料夾（例如 Synology Drive）時，多台電腦（Mac 與 Linux）共用並合併。</li>
+  <li>不想要的詞可以從選單「編輯排除的詞彙」排除，排除後不會再被自動加回來。</li>
+</ul>
+</section>
+
+<section id="vocabulary">
+<h2>管理詞彙</h2>
+<p>從 fcitx 選單「管理詞彙…」開啟，或從桌面的應用程式選單開啟「小麥注音管理詞彙」，不用再直接編輯文字檔。分頁：</p>
+<ul>
+  <li><b>中文詞彙</b>：自訂詞優先出現在候選字。輸入詞會自動帶出注音，破音字可以自己改。</li>
+  <li><b>排除詞彙</b>：永遠不會出現在候選字的詞。</li>
+  <li><b>英文詞彙</b>：英文聯想（Tab）優先列出的字；打過兩次以上的字會自動列在這裡。</li>
+  <li><b>常用句</b>：已記住和還在累積次數的句子。</li>
+  <li><b>暫存詞</b>：選過一次、還在 30 天期限內的詞，可以刪除或直接加入中文詞彙。</li>
+  <li><b>文字範本</b>：按 ` 後輸入代碼插入的內容。</li>
+</ul>
+<ul>
+  <li>「在檔案管理員中顯示」按鈕會在檔案管理員中選取目前分頁的檔案（學習資料的分頁是 <code>learning/</code> 資料夾）。</li>
+  <li>改好的內容立即生效，不用重新啟動輸入法。視窗切回前景時，會重新讀取其他電腦同步過來的變更。</li>
+  <li>自動帶出注音時，簡體字不會先轉成繁體，請直接輸入繁體字詞。</li>
+  <li>從應用程式選單開啟、而這台電腦的小麥注音還沒啟動過時，會以唯讀方式開啟；先在 fcitx 啟用小麥注音一次，或從 fcitx 選單開啟即可修改。</li>
+</ul>
+<p class="note">在一台電腦刪除的英文字、常用句、暫存詞，其他電腦（Mac 與 Linux）也會一起刪除。</p>
+</section>
+
+<section id="floating">
+<h2>浮動組字窗</h2>
+<p>有些程式會在組字途中自己改動內容，造成漏字或補字重複（常見於網頁裡的編輯器）。遇到這種程式，在 fcitx 選單勾選「此程式使用浮動組字窗」：組字中的字改顯示在 fcitx 面板最上方，按 <kbd>Enter</kbd>、標點等送出時才交給程式。</p>
+<ul>
+  <li>設定是以程式為單位，例如在 Chrome 勾選後，整個 Chrome 都會使用。再點一次取消。</li>
+  <li>切換時，正在組字的內容會先送出。</li>
+  <li>已勾選的程式列在偏好設定「使用浮動組字窗的程式」，也可以在那裡刪除。</li>
+  <li>組字列和候選字在同一個面板，面板在游標下方；組字列和候選字使用同一個字型大小。</li>
+  <li>有些程式沒有回報程式名稱（例如部分 Wayland 原生程式），這時選單不會出現這一項。同一個瀏覽器用不同方式啟動時，回報的名稱可能不同。</li>
+</ul>
+<p class="note">fcitx 本身也有全域的「切換內嵌預編輯區域」快速鍵（預設 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>），切換是否在程式內顯示組字；本功能只影響勾選的程式。</p>
+</section>
+
+<section id="mode">
+<h2>中英提示與模式圖示</h2>
+<ul>
+  <li><b>中英切換提醒</b>：按 <kbd>Caps Lock</kbd> 時，會以 fcitx 通知短暫顯示「ABC」或「中文」。有些桌面環境不會把 Caps Lock 鍵交給輸入法，這時不會出現提醒。</li>
+  <li><b>模式狀態顯示</b>：使用小麥時，fcitx 選單（系統匣或面板）會多一項「中／英」（Caps Lock 或智慧切換的英文模式時為「英」）。也可以讓半形標點那一項改顯示「全／半」，點一下切換。</li>
+</ul>
+</section>
+
+<section id="settings">
+<h2>偏好設定</h2>
+<p>從「Fcitx 5 設定」→「輸入法」→ 選「小麥注音」→ 按「設定」開啟（fcitx 系統匣選單的「設定」也可以）。本版新增的項目：</p>
+<ul>
+  <li><b>按 ESC 只清除字尾打錯的亂碼</b>：按一下只清除字尾打錯的亂碼、連按兩下清除全部（預設開）。</li>
+  <li><b>智慧中英切換</b>：不按 Shift、Caps Lock 也能打英文（預設開）。</li>
+  <li><b>中英文之間自動加空格</b>、<b>英文、數字後的標點用半形</b>、<b>按空白時修正英文大小寫</b>（預設都開）。</li>
+  <li><b>記住常打的句子，打出開頭按 Tab 接上</b>：常用句（預設開）。</li>
+  <li><b>中英切換提醒</b>：開啟／關閉（預設開）。</li>
+  <li><b>中／英模式圖示</b>（預設開）、<b>全／半形模式圖示</b>（預設關）。</li>
+  <li><b>詞庫資料夾（與其他電腦共用）</b>：見「<a href="#files">詞庫檔案</a>」。</li>
+  <li><b>使用浮動組字窗的程式</b>：見「<a href="#floating">浮動組字窗</a>」。</li>
+</ul>
+<p class="note">候選字面板的淺色、深色與字級，見「<a href="#themes">候選字面板主題</a>」。</p>
+</section>
+
+<section id="files">
+<h2>詞庫檔案</h2>
+<p>預設的詞庫資料夾是 <code>~/.local/share/fcitx5/mcbopomofo/</code>，可在偏好設定改成同步資料夾，例如 Synology Drive 的 <code>McBopomofo</code> 資料夾。</p>
+<ul>
+  <li><code>data.txt</code>：個人詞庫，一行一筆「詞 注音」，注音之間以 <code>-</code> 連接。</li>
+  <li><code>exclude-phrases.txt</code>：要排除的詞。</li>
+  <li><code>text-templates.txt</code>：文字範本。</li>
+  <li><code>symbol-table.txt</code>：符號表。</li>
+  <li><code>learning/</code>：選字記憶、<code>temporary/</code> 暫存詞、<code>english/</code> 打過的英文字、<code>sentences/</code> 常用句，每台電腦各寫自己的檔案；<code>removed.txt</code> 記錄刪除的項目，讓其他電腦一起刪除。</li>
+</ul>
+<p class="note">同步工具產生的衝突副本不會被讀取。</p>
+</section>
+
+<section id="shortcuts">
+<h2>快速鍵一覽</h2>
+<ul>
+  <li><kbd>`</kbd>：文字範本、數字快打；再按一次開啟符號表。</li>
+  <li><kbd>Tab</kbd>（英文時）：英文聯想。</li>
+  <li><kbd>Tab</kbd>（有常用句提示時）：接上後半句。</li>
+  <li><kbd>+</kbd> <kbd>-</kbd> <kbd>?</kbd>（候選字視窗）：提高排序、排除、查辭典。</li>
+  <li><kbd>=</kbd>（算式後）：自動算出答案。</li>
+  <li><kbd>Caps Lock</kbd>：切換英文小寫。</li>
+  <li><kbd>Shift</kbd> + 字母：直接打英文。</li>
+  <li><kbd>Ctrl</kbd> + 標點：一律打全形標點。</li>
+  <li>輸出簡體中文：由 fcitx 的繁簡轉換外掛（套件 <code>fcitx5-chinese-addons</code>）提供，fcitx 選單裡有切換項目，快速鍵預設 <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>，可在該外掛的設定修改。</li>
+  <li>切換半形標點：從 fcitx 選單切換。</li>
+  <li><kbd>Esc</kbd>：清除字尾打錯的亂碼，保留最後一個完整的中文或英文字；候選字視窗開著時關閉視窗。</li>
+  <li><kbd>Esc</kbd> <kbd>Esc</kbd>（連按兩下）：清除整個組字區。</li>
+</ul>
+<p class="note">按住 <kbd>Alt</kbd> 或 <kbd>Super</kbd> 的組合鍵，輸入法不處理，直接交給程式。</p>
+</section>
+
+<section id="about">
+<h2>關於小麥注音</h2>
+<p class="about-name">小麥注音（智慧學習版）</p>
+<p class="about-version">版本 @MCBOPOMOFO_PACKAGE_VERSION@（Linux／fcitx5）</p>
+<p>智慧學習版在小麥注音之上加入自動學習、智慧中英切換、中英混打、英文聯想、常用句、數字快打、文字範本、分類符號表與管理詞彙，並可透過同步資料夾和 Mac 版共用詞庫與學習紀錄。</p>
+<ul>
+  <li><a href="https://github.com/butyroger/fcitx5-mcbopomofo#readme">智慧學習版說明</a></li>
+  <li><a href="https://github.com/butyroger/fcitx5-mcbopomofo">智慧學習版 GitHub 專案頁面</a></li>
+  <li><a href="https://github.com/butyroger/fcitx5-mcbopomofo/issues">問題回報（智慧學習版）</a></li>
+  <li><a href="https://github.com/butyroger/McBopomofo">智慧學習版 Mac 版</a></li>
+</ul>
+<ul>
+  <li><a href="https://mcbopomofo.openvanilla.org/">原版網站</a></li>
+  <li><a href="https://github.com/openvanilla/McBopomofo/wiki/%E4%BD%BF%E7%94%A8%E6%89%8B%E5%86%8A">原版使用手冊</a></li>
+  <li><a href="https://github.com/openvanilla/McBopomofo/wiki/%E5%B8%B8%E8%A6%8B%E5%95%8F%E9%A1%8C">原版常見問題</a></li>
+  <li><a href="https://github.com/openvanilla/McBopomofo/discussions">原版意見討論</a></li>
+  <li><a href="https://github.com/openvanilla/fcitx5-mcbopomofo">原版 Linux 版（fcitx5-mcbopomofo）</a></li>
+</ul>
+<p>Copyright © 2011-2026 Mengjuei Hsieh et al.<br>All Rights Reserved.<br>智慧學習版 © 2026 butyroger</p>
+<p>fcitx5 版：Copyright (c) 2022 and onwards The McBopomofo Authors，以 MIT 授權發布。</p>
+</section>
+</main>
+</div>
+</body>
+</html>

@@ -65,6 +65,12 @@ include("${FCITX_INSTALL_CMAKECONFIG_DIR}/Fcitx5Utils/Fcitx5CompilerSettings.cma
 # So that `make install` does not also install Google Test
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
+# The package version, also shown in the user guide.
+set(MCBOPOMOFO_PACKAGE_VERSION "${PROJECT_VERSION}-learning.3")
+# The user guide, opened from the input method menu.
+set(MCBOPOMOFO_USER_GUIDE_DIR "${CMAKE_INSTALL_DATADIR}/fcitx5-mcbopomofo")
+set(MCBOPOMOFO_USER_GUIDE_PATH "${CMAKE_INSTALL_FULL_DATADIR}/fcitx5-mcbopomofo/user-guide.html")
+
 add_subdirectory(src)
 add_subdirectory(data)
 add_subdirectory(po)
@@ -99,7 +105,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/org.fcitx.Fcitx5.Addon.McBopomofo.met
 # Debian package (Ubuntu 24.04 / Linux Mint 22)
 set(CPACK_GENERATOR "DEB")
 set(CPACK_PACKAGE_NAME "fcitx5-mcbopomofo-smart-learning")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}-learning.3")
+set(CPACK_PACKAGE_VERSION "${MCBOPOMOFO_PACKAGE_VERSION}")
 set(CPACK_PACKAGE_CONTACT "McBopomofo Smart Learning Edition")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "McBopomofo Smart Learning Edition for fcitx5")
 set(CPACK_DEBIAN_PACKAGE_SECTION "utils")

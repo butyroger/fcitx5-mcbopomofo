@@ -88,6 +88,8 @@ if (ENABLE_VOCABULARY_MANAGER)
     target_compile_definitions(mcbopomofo PRIVATE
             MCBOPOMOFO_VOCABULARY_MANAGER_PATH="${MCBOPOMOFO_VOCABULARY_MANAGER_PATH}")
 endif ()
+target_compile_definitions(mcbopomofo PRIVATE
+        MCBOPOMOFO_USER_GUIDE_PATH="${MCBOPOMOFO_USER_GUIDE_PATH}")
 install(TARGETS mcbopomofo DESTINATION "${FCITX_INSTALL_LIBDIR}/fcitx5")
 
 if (ENABLE_CLANG_TIDY)
@@ -137,7 +139,8 @@ if (ENABLE_TEST)
         target_link_libraries(McBopomofoTest PRIVATE Fcitx5::Core GTest::gtest_main GTest::gmock_main McBopomofoLib fmt::fmt ${JSONC_LIBRARIES})
         target_include_directories(McBopomofoTest PRIVATE Fcitx5::Core fmt::fmt)
         target_compile_definitions(McBopomofoTest PRIVATE
-                MCBOPOMOFO_TEST_FULL_DATA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../data/data.txt")
+                MCBOPOMOFO_TEST_FULL_DATA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../data/data.txt"
+                MCBOPOMOFO_USER_GUIDE_PATH="${MCBOPOMOFO_USER_GUIDE_PATH}")
         if (ENABLE_VOCABULARY_MANAGER)
                 target_compile_definitions(McBopomofoTest PRIVATE
                         MCBOPOMOFO_VOCABULARY_MANAGER_PATH="${MCBOPOMOFO_VOCABULARY_MANAGER_PATH}")
