@@ -208,6 +208,13 @@ FCITX_CONFIGURATION(
         this, "AddScriptHookEnabled",
         _("Run the hook script after adding a phrase"), false};
 
+    // The folder holding data.txt, exclude-phrases.txt and
+    // phrases-replacement.txt. Empty means the default folder inside the
+    // fcitx5 user directory. "~/" is expanded.
+    fcitx::Option<std::string> userDataFolder{
+        this, "UserDataFolder",
+        _("User data folder (shared with other computers)"), ""};
+
     // Identifies this device in the learned-choice folder. Generated on first
     // start; never edited by hand.
     fcitx::HiddenOption<std::string> deviceID{this, "DeviceID", "DeviceID", ""};
@@ -320,6 +327,9 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
 
   // Points the learned-choice store at "<user data folder>/learning".
   void applyLearningFolder();
+  // Resolves the configured user data folder and switches to it.
+  void applyUserDataFolder();
+  void showUserDataFolderWarning();
 
   // (Re)starts the 2-second timer after which the learned choices are saved.
   // Choices made in quick succession share one save.
@@ -332,6 +342,9 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::shared_ptr<SmartLearning::UserOverrideStore> userOverrideStore_;
   std::unique_ptr<fcitx::EventSourceTime> learningSaveTimer_;
   bool learningSaveRetried_ = false;
+  // The latest data-folder warning not shown yet, and the last one shown.
+  std::string pendingDataFolderWarning_;
+  std::string shownDataFolderWarning_;
   std::shared_ptr<KeyHandler> keyHandler_;
   std::unique_ptr<InputState> state_;
   McBopomofoConfig config_;

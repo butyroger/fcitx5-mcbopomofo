@@ -24,6 +24,7 @@
 #ifndef SRC_LANGUAGEMODELLOADER_H_
 #define SRC_LANGUAGEMODELLOADER_H_
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -68,6 +69,14 @@ class LanguageModelLoader : public UserPhraseAdder {
 
   bool reloadUserModelsIfNeeded();
 
+  // Switches to another folder for data.txt, exclude-phrases.txt and
+  // phrases-replacement.txt, and reloads the user phrases from it. Missing
+  // template files are created there; existing files are never overwritten.
+  void setUserDataFolder(std::filesystem::path folder);
+
+  // The folder used when no custom folder is configured.
+  std::string defaultUserDataPath() const { return defaultUserDataPath_; }
+
   std::string userDataPath() const { return userDataPath_; }
 
   std::string userPhrasesPath() const { return userPhrasesPath_.path(); }
@@ -96,6 +105,7 @@ class LanguageModelLoader : public UserPhraseAdder {
   std::shared_ptr<VariantAnnotator> variantAnnotator_;
 
   std::string userDataPath_;
+  std::string defaultUserDataPath_;
   TimestampedPath userPhrasesPath_;
   TimestampedPath excludedPhrasesPath_;
   TimestampedPath phrasesReplacementPath_;

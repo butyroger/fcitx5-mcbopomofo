@@ -33,6 +33,7 @@
 
 #include "Log.h"
 #include "PathCompat.h"
+#include "SmartLearning/AtomicFile.h"
 
 namespace McBopomofo {
 
@@ -114,6 +115,16 @@ LanguageModelLoader::LanguageModelLoader(
       return;
     }
   }
+
+  defaultUserDataPath_ = userDataPath;
+  setUserDataFolder(userDataPath);
+}
+
+void LanguageModelLoader::setUserDataFolder(std::filesystem::path folder) {
+  if (folder.empty() || folder.string() == userDataPath_) {
+    return;
+  }
+  std::string userDataPath = folder.string();
 
   // We just use very simple file handling routines.
   userDataPath_ = userDataPath;
@@ -383,20 +394,16 @@ bool LanguageModelLoader::removePhraseFromFile(
     return false;
   }
 
-  // Create a temporary file
-  std::string tempPath = path.string() + ".tmp";
-  std::ofstream outFile(tempPath);
-  if (!outFile.is_open()) {
-    FCITX_MCBOPOMOFO_WARN() << "Failed to create temporary file: " << tempPath;
-    return false;
-  }
-
+  // The file is read again right now (it may be shared and synced), edited in
+  // memory, and written back in one atomic replace.
+  std::string content;
   std::string line;
   bool removed = false;
   while (std::getline(inFile, line)) {
     // Preserve comments and empty lines
     if (line.empty() || line[0] == '#') {
-      outFile << line << '\n';
+      content += line;
+      content += '\n';
       continue;
     }
 
@@ -413,30 +420,21 @@ bool LanguageModelLoader::removePhraseFromFile(
       continue;
     }
 
-    outFile << line << '\n';
+    content += line;
+    content += '\n';
   }
-
   inFile.close();
-  outFile.close();
 
-  // Replace the original file with the temporary one if something was removed
-  if (removed) {
-    std::error_code ec;
-    std::filesystem::rename(tempPath, path, ec);
-    if (ec) {
-      FCITX_MCBOPOMOFO_WARN()
-          << "Failed to rename temporary file: " << ec.message();
-      std::filesystem::remove(tempPath, ec);
-      return false;
-    }
-    FCITX_MCBOPOMOFO_INFO()
-        << "Removed phrase from file: " << value << ", reading: " << reading;
-    return true;
+  if (!removed) {
+    return false;
   }
-
-  // If nothing was removed, delete the temp file
-  std::filesystem::remove(tempPath);
-  return false;
+  if (!SmartLearning::writeFileAtomically(path, content)) {
+    FCITX_MCBOPOMOFO_WARN() << "Failed to write file: " << path;
+    return false;
+  }
+  FCITX_MCBOPOMOFO_INFO() << "Removed phrase from file: " << value
+                          << ", reading: " << reading;
+  return true;
 }
 
 }  // namespace McBopomofo

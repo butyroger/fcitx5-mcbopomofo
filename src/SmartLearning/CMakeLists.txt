@@ -10,6 +10,8 @@ add_library(SmartLearningLib
         LearningPaths.h
         LearningPaths.cpp
         UserOverrideStore.h
+        UserDataFolder.h
+        UserDataFolder.cpp
         UserOverrideStore.cpp)
 target_include_directories(SmartLearningLib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -22,6 +24,7 @@ if (ENABLE_TEST)
         add_executable(SmartLearningLibTest
                 AtomicFileTest.cpp
                 LearningPathsTest.cpp
+                UserDataFolderTest.cpp
                 UserOverrideStoreTest.cpp)
         target_link_libraries(SmartLearningLibTest GTest::gtest_main SmartLearningLib)
         include(GoogleTest)

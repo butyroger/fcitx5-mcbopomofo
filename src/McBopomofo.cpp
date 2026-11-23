@@ -46,6 +46,7 @@
 #include "Format.h"
 #include "Key.h"
 #include "LearningPaths.h"
+#include "UserDataFolder.h"
 #include "Log.h"
 #include "UTF8Helper.h"
 
@@ -468,6 +469,7 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   }
   userOverrideStore_ = std::make_shared<SmartLearning::UserOverrideStore>(
       config_.deviceID.value(), hostName);
+  applyUserDataFolder();
   applyLearningFolder();
   keyHandler_ = std::make_shared<KeyHandler>(
       languageModelLoader_->getLM(),
@@ -618,6 +620,49 @@ void McBopomofoEngine::applyLearningFolder() {
       "learning");
 }
 
+void McBopomofoEngine::applyUserDataFolder() {
+  if (!languageModelLoader_) {
+    return;
+  }
+  std::string warning;
+  auto folder = SmartLearning::resolveUserDataFolder(
+      config_.userDataFolder.value(),
+      languageModelLoader_->defaultUserDataPath(), &warning);
+  if (warning.empty()) {
+    pendingDataFolderWarning_.clear();
+    shownDataFolderWarning_.clear();
+  } else {
+    pendingDataFolderWarning_ = warning;
+  }
+  if (folder.empty() ||
+      folder.string() == languageModelLoader_->userDataPath()) {
+    return;
+  }
+  languageModelLoader_->setUserDataFolder(folder);
+  userFileIssues_ = languageModelLoader_->getUserFileIssues();
+  if (userOverrideStore_) {
+    applyLearningFolder();
+  }
+}
+
+void McBopomofoEngine::showUserDataFolderWarning() {
+  if (pendingDataFolderWarning_.empty() ||
+      pendingDataFolderWarning_ == shownDataFolderWarning_) {
+    return;
+  }
+  shownDataFolderWarning_ = pendingDataFolderWarning_;
+  std::string body = pendingDataFolderWarning_;
+  body += "\n";
+  body += _("The default folder is used instead.");
+  if (notifications()) {
+    notifications()->call<fcitx::INotifications::showTip>(
+        "mcbopomofo-user-data-folder", _("McBopomofo"), "fcitx_mcbopomofo",
+        _("User data folder not used"), body, kFcitx5NotificationTimeoutInMs);
+  } else {
+    FCITX_MCBOPOMOFO_ERROR() << body;
+  }
+}
+
 void McBopomofoEngine::scheduleLearningSave() {
   learningSaveRetried_ = false;
   learningSaveTimer_ = instance_->eventLoop().addTimeEvent(
@@ -641,10 +686,12 @@ const fcitx::Configuration* McBopomofoEngine::getConfig() const {
 void McBopomofoEngine::setConfig(const fcitx::RawConfig& config) {
   config_.load(config, true);
   fcitx::safeSaveAsIni(config_, kConfigPath);
+  applyUserDataFolder();
 }
 
 void McBopomofoEngine::reloadConfig() {
   fcitx::readAsIni(config_, kConfigPath);
+  applyUserDataFolder();
 }
 
 void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
@@ -767,6 +814,8 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   if (didReload) {
     userFileIssues_ = languageModelLoader_->getUserFileIssues();
   }
+
+  showUserDataFolderWarning();
 
   if (!userFileIssues_.empty()) {
     showAndClearUserFileIssues();
