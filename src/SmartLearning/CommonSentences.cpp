@@ -437,7 +437,31 @@ void CommonSentenceStore::reloadIfNeeded() {
   if (now >= lastLoaded_ && now - lastLoaded_ < kReloadInterval) {
     return;
   }
+  if (!localFilePending_ && takeSnapshot() == snapshot_) {
+    // Nothing to read again: the own file is read only once, and the removed
+    // entries are looked up as the sentences are used.
+    lastLoaded_ = now;
+    return;
+  }
   reload();
+}
+
+CommonSentenceStore::Snapshot CommonSentenceStore::takeSnapshot() const {
+  Snapshot snapshot;
+  if (!hasFolder_) {
+    return snapshot;
+  }
+  for (const auto& path :
+       otherDevicesLearningFiles(sentencesFolder(), ownFilename_)) {
+    std::error_code mtimeEc;
+    std::error_code sizeEc;
+    auto mtime = fs::last_write_time(path, mtimeEc);
+    auto size = fs::file_size(path, sizeEc);
+    if (!mtimeEc && !sizeEc) {
+      snapshot[path.filename().string()] = {mtime, size};
+    }
+  }
+  return snapshot;
 }
 
 bool CommonSentenceStore::save() {
@@ -551,6 +575,8 @@ bool CommonSentenceStore::loadLocalFileIfNeeded() {
 
 void CommonSentenceStore::merge() {
   std::map<std::string, Entry> merged = localEntries_;
+  // Taken before reading, so that a file changed meanwhile is read again.
+  snapshot_ = takeSnapshot();
   if (hasFolder_) {
     for (const auto& path :
          otherDevicesLearningFiles(sentencesFolder(), ownFilename_)) {

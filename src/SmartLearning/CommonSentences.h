@@ -2,6 +2,7 @@
 #define SRC_SMARTLEARNING_COMMONSENTENCES_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -9,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "RemovedEntries.h"
@@ -104,7 +106,9 @@ class CommonSentenceStore {
   // again.
   void reload();
 
-  // Reloads if the files were last read kReloadInterval seconds ago or more.
+  // Reloads if the files were last read kReloadInterval seconds ago or more
+  // and the other devices' files (name, modification time, size) changed
+  // since, or the own file is still pending.
   void reloadIfNeeded();
 
   // Writes the own sentences to the own file atomically, leaving out those
@@ -119,8 +123,14 @@ class CommonSentenceStore {
   [[nodiscard]] std::optional<Entry> entry(const std::string& sentence) const;
 
  private:
+  // The modification time and size of each other device's file, by name.
+  using Snapshot =
+      std::map<std::string,
+               std::pair<std::filesystem::file_time_type, std::uintmax_t>>;
+
   // Returns true if the own file was loaded (or found absent) by this call.
   bool loadLocalFileIfNeeded();
+  Snapshot takeSnapshot() const;
   void merge();
   bool isAlive(const std::string& sentence, const Entry& entry, double now);
   std::filesystem::path sentencesFolder() const;
@@ -137,6 +147,8 @@ class CommonSentenceStore {
   bool localFilePending_ = true;
   bool unsavedChanges_ = false;
   double lastLoaded_ = 0;
+  // The other devices' files as they were last merged.
+  Snapshot snapshot_;
 
   // The sentences of this device, and of all the devices.
   std::map<std::string, Entry> localEntries_;

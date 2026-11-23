@@ -396,6 +396,28 @@ TEST_F(CommonSentencesTest, OtherDevicesReloadedAfterTheInterval) {
   EXPECT_EQ(store->completion("謝謝"), "您的耐心等候");
 }
 
+TEST_F(CommonSentencesTest, UnchangedOtherDevicesAreNotReadAgain) {
+  fs::create_directories(sentences_);
+  const fs::path other = sentences_ / "AAAA0002-laptop.txt";
+  writeFile(other, line(kSentence, 3, kNow));
+  auto store = loadedStore();
+  ASSERT_EQ(store->completion("謝謝"), "您的耐心等候");
+
+  // Same size and modification time: taken as unchanged, so not read.
+  const auto mtime = fs::last_write_time(other);
+  writeFile(other, line("謝謝您的耐心等待", 3, kNow));
+  fs::last_write_time(other, mtime);
+  now_ = kNow + 60;
+  store->reloadIfNeeded();
+  EXPECT_EQ(store->completion("謝謝"), "您的耐心等候");
+
+  // A change of size is read.
+  writeFile(other, line("謝謝您的耐心與包容", 3, kNow));
+  now_ = kNow + 120;
+  store->reloadIfNeeded();
+  EXPECT_EQ(store->completion("謝謝"), "您的耐心與包容");
+}
+
 TEST_F(CommonSentencesTest, SwitchingFoldersKeepsOwnSentencesInTheOldOne) {
   auto store = loadedStore();
   store->record(kSentence);
