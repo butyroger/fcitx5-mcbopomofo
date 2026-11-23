@@ -81,6 +81,20 @@ fcitx5_translate_desktop_file(org.fcitx.Fcitx5.Addon.McBopomofo.metainfo.xml.in
                               org.fcitx.Fcitx5.Addon.McBopomofo.metainfo.xml XML
                               PO_DIRECTORY "${CMAKE_SOURCE_DIR}/po")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/org.fcitx.Fcitx5.Addon.McBopomofo.metainfo.xml" DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+# Debian package (Ubuntu 24.04 / Linux Mint 22)
+set(CPACK_GENERATOR "DEB")
+set(CPACK_PACKAGE_NAME "fcitx5-mcbopomofo-smart-learning")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}-learning.1")
+set(CPACK_PACKAGE_CONTACT "McBopomofo Smart Learning Edition")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "McBopomofo Smart Learning Edition for fcitx5")
+set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS "fcitx5")
+set(CPACK_DEBIAN_PACKAGE_CONFLICTS "fcitx5-mcbopomofo")
+set(CPACK_DEBIAN_PACKAGE_ARCHITECTURE "amd64")
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+include(CPack)
+
 feature_summary(WHAT ALL FATAL_ON_MISSING_REQUIRED_PACKAGES)
 
 if (ENABLE_TEST)

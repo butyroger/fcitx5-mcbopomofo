@@ -11,3 +11,4 @@ CMakeCache.txt
 *.pot~
 *.po~
 build-docker/
+dist/

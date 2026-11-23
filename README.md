@@ -1,3 +1,45 @@
+# 小麥注音 智慧學習版（Linux／fcitx5）
+
+這是小麥注音 fcitx5 版的「智慧學習版」，選字引擎與 macOS 智慧學習版（learning.23）一致，並針對日常打字調整預設值。
+
+## 這個版本有什麼
+
+- 選字引擎與 macOS 智慧學習版相同。
+- 學習到的候選字選擇會依裝置各存一份，放在「用戶資料夾」的 `learning/<裝置ID>-<主機名>.txt`，並自動與其他裝置的檔案合併，因此 Mac 與 Linux 可以互相共用學到的選字。
+- 可在 fcitx5 設定中指定「User data folder」（用戶資料夾），指向同步資料夾即可與 Mac 共用詞庫與學習紀錄。使用者自選的資料夾裡不會自動建立範本檔；若資料夾尚未同步完成，會顯示等待同步的提示。
+- 預設值與作者的 Mac 設定相同：許氏鍵盤、選字鍵 `asdfghjkl`、直式候選字窗等。
+
+## 安裝（Ubuntu 24.04／Linux Mint 22）
+
+先安裝 fcitx5 與本套件（`.deb` 檔請至專案的 Releases 頁面下載，以下以下載到目前目錄為例）：
+
+```bash
+sudo apt update
+sudo apt install fcitx5 fcitx5-config-qt ./fcitx5-mcbopomofo-smart-learning_3.1.1-learning.1_amd64.deb
+im-config -n fcitx5
+```
+
+本套件與官方的 `fcitx5-mcbopomofo` 互斥，安裝時會取代它。
+
+登出再登入後，開啟「Fcitx 5 設定」，在「輸入法」頁籤加入「小麥注音」。
+
+- Linux Mint（Cinnamon）：不需要額外套件。
+- Ubuntu（GNOME）：另外需要安裝 GNOME Shell 擴充套件「Input Method Panel」並啟用，候選字窗才會顯示在正確位置。
+
+```bash
+sudo apt install gnome-shell-extension-manager
+# 開啟 Extension Manager，搜尋並安裝「Input Method Panel」
+```
+
+## 與 Mac 共用詞庫（Synology Drive）
+
+1. 在 Linux 安裝 Synology Drive Client for Linux，登入後建立同步工作，把 NAS 上的 `McBopomofo` 資料夾同步到本機，例如 `~/SynologyDrive/McBopomofo`。
+2. 等第一次同步完成（資料夾內的 `data.txt` 等檔案都已出現）。
+3. 開啟「Fcitx 5 設定」，在小麥注音的設定中，把「User data folder」設為該同步資料夾，例如 `~/SynologyDrive/McBopomofo`。
+4. 切換一次輸入法讓設定生效。之後 Mac 與 Linux 加的詞、學到的選字會互相同步。
+
+---
+
 # fcitx5-mcbopomofo: 小麥注音輸入法 fcitx5 模組
 
 ![Build](https://github.com/openvanilla/fcitx5-mcbopomofo/actions/workflows/ci.yaml/badge.svg)
