@@ -829,9 +829,17 @@ void McBopomofoEngine::selectQuickLayout(fcitx::InputContext* context,
   config_.bopomofoKeyboardLayout.setValue(layout);
   fcitx::safeSaveAsIni(config_, kConfigPath);
   keyHandler_->setKeyboardLayout(layoutForConfig(layout));
-  // Whatever was being composed is dropped, not committed.
+  // Whatever was being composed is dropped, not committed: switching the
+  // keyboard must not put half-typed text into the application. Entering
+  // EmptyIgnoringPrevious first discards the old state without side effects;
+  // Empty follows so the rest of the engine only ever sees Empty.
   keyHandler_->reset();
-  enterNewState(context, std::make_unique<InputStates::Empty>());
+  if (context != nullptr) {
+    auto seq = std::make_unique<InputStates::StateSequence>();
+    seq->push_back(std::make_unique<InputStates::EmptyIgnoringPrevious>());
+    seq->push_back(std::make_unique<InputStates::Empty>());
+    handleStateOrSequence(context, std::move(seq));
+  }
   if (notifications()) {
     notifications()->call<fcitx::INotifications::showTip>(
         "mcbopomofo-layout-switch", _("McBopomofo"), "fcitx_mcbopomofo", title,
