@@ -274,4 +274,66 @@ TEST_F(UserOverrideStoreTest, SanitizesDeviceName) {
   EXPECT_TRUE(fs::exists(folder_ / "AAAA0001-my_box.txt"));
 }
 
+TEST_F(UserOverrideStoreTest, SettingSameFolderAgainKeepsCounts) {
+  UserOverrideStore store("AAAA0001", "mint");
+  store.setLearningFolder(folder_);
+  store.observe(walks_.oilBefore, walks_.oilAfter, 1, kNow);
+  ASSERT_TRUE(store.save());
+  const std::string first = readFile(folder_ / "AAAA0001-mint.txt");
+
+  store.setLearningFolder(folder_);
+  store.setLearningFolder(folder_ / "." / "");
+  EXPECT_FALSE(store.isLocalFilePending());
+  EXPECT_EQ(store.mergedModel()->candidateObservationCount("機油"), 1u);
+  ASSERT_TRUE(store.save());
+  EXPECT_EQ(readFile(folder_ / "AAAA0001-mint.txt"), first);
+
+  // A second store loading the same file sees the same count.
+  UserOverrideStore other("AAAA0001", "mint");
+  other.setLearningFolder(folder_);
+  EXPECT_EQ(other.mergedModel()->candidateObservationCount("機油"), 1u);
+}
+
+TEST_F(UserOverrideStoreTest, SwitchingFoldersKeepsEachFolderApart) {
+  const fs::path a = folder_ / "a";
+  const fs::path b = folder_ / "b";
+  fs::create_directories(a);
+  fs::create_directories(b);
+
+  UserOverrideStore store("AAAA0001", "mint");
+  store.setLearningFolder(a);
+  store.observe(walks_.oilBefore, walks_.oilAfter, 1, kNow);
+  ASSERT_TRUE(store.save());
+  const std::string aContent = readFile(a / "AAAA0001-mint.txt");
+
+  store.setLearningFolder(b);
+  EXPECT_FALSE(store.isLocalFilePending());
+  EXPECT_EQ(store.mergedModel()->candidateObservationCount("機油"), 0u);
+  store.observe(walks_.accBefore, walks_.accAfter, 0, kNow);
+  ASSERT_TRUE(store.save());
+  const std::string bContent = readFile(b / "AAAA0001-mint.txt");
+  EXPECT_EQ(bContent.find("機油"), std::string::npos);
+  EXPECT_NE(bContent.find("積"), std::string::npos);
+
+  store.setLearningFolder(a);
+  EXPECT_EQ(store.mergedModel()->candidateObservationCount("機油"), 1u);
+  EXPECT_EQ(store.mergedModel()->candidateObservationCount("積"), 0u);
+  ASSERT_TRUE(store.save());
+  EXPECT_EQ(readFile(a / "AAAA0001-mint.txt"), aContent);
+  EXPECT_EQ(readFile(b / "AAAA0001-mint.txt"), bContent);
+}
+
+TEST_F(UserOverrideStoreTest, SwitchingFoldersSavesUnsavedChoicesToOldFolder) {
+  const fs::path a = folder_ / "a";
+  const fs::path b = folder_ / "b";
+  fs::create_directories(a);
+  fs::create_directories(b);
+
+  UserOverrideStore store("AAAA0001", "mint");
+  store.setLearningFolder(a);
+  store.observe(walks_.oilBefore, walks_.oilAfter, 1, kNow);
+  store.setLearningFolder(b);
+  EXPECT_NE(readFile(a / "AAAA0001-mint.txt").find("機油"), std::string::npos);
+}
+
 }  // namespace McBopomofo::SmartLearning

@@ -34,6 +34,15 @@ std::optional<std::string> readWholeFile(const fs::path& path) {
 
 bool hasTxtExtension(const fs::path& path) { return path.extension() == ".txt"; }
 
+// "a/./b/" and "a/b" are the same folder.
+fs::path normalizedFolder(const fs::path& path) {
+  fs::path normal = path.lexically_normal();
+  if (normal.filename().empty() && normal.has_parent_path()) {
+    normal = normal.parent_path();
+  }
+  return normal;
+}
+
 }  // namespace
 
 UserOverrideStore::UserOverrideStore(std::string deviceID,
@@ -44,9 +53,24 @@ UserOverrideStore::UserOverrideStore(std::string deviceID,
       mergedModel_(kMergedCapacity, kHalfLife) {}
 
 void UserOverrideStore::setLearningFolder(fs::path folder) {
+  if (hasFolder_ && normalizedFolder(folder) == normalizedFolder(folder_)) {
+    // The own file is already loaded (or still pending) from this folder;
+    // loading it again would add its counts a second time.
+    reload();
+    return;
+  }
+  if (hasFolder_) {
+    // The own model belongs to the old folder: keep it there, then start
+    // over with what the new folder holds.
+    if (!localFilePending_) {
+      save();
+    }
+    localModel_ = UserOverrideModel(kLocalCapacity, kHalfLife);
+  }
   folder_ = std::move(folder);
   hasFolder_ = true;
   localFilePending_ = true;
+  snapshot_ = Snapshot();
   reload();
 }
 
@@ -133,7 +157,12 @@ bool UserOverrideStore::loadLocalFileIfNeeded() {
   if (!fs::exists(fs::symlink_status(path, ec))) {
     // The computer may have been renamed since the file was written.
     if (auto renamed = findRenamedOwnFile(folder_, deviceID_, ownFilename_)) {
-      fs::rename(*renamed, path, ec);
+      std::error_code renameEc;
+      fs::rename(*renamed, path, renameEc);
+      if (renameEc) {
+        // Starting a new file would split this device's history in two.
+        return false;
+      }
     }
   }
 
