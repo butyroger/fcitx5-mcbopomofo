@@ -272,23 +272,19 @@ LanguageModelLoader::getUserFileIssues() const {
 }
 
 void LanguageModelLoader::populateUserDataFilesIfNeeded() {
-  if (!userPhrasesPath_.path().empty() && !userPhrasesPath_.pathExists()) {
-    std::ofstream ofs(userPhrasesPath_.path());
-    if (ofs) {
-      FCITX_MCBOPOMOFO_INFO() << "Creating: " << userPhrasesPath_.path();
-      ofs << localizedStrings_->userPhraseFileHeader();
-      ofs.close();
-    }
+  // Files are created with O_EXCL, so a file that already exists (or that a
+  // sync client puts there meanwhile) is never truncated.
+  if (!userPhrasesPath_.path().empty() &&
+      SmartLearning::createFileIfAbsent(
+          userPhrasesPath_.path(), localizedStrings_->userPhraseFileHeader())) {
+    FCITX_MCBOPOMOFO_INFO() << "Created: " << userPhrasesPath_.path();
   }
 
   if (!excludedPhrasesPath_.path().empty() &&
-      !excludedPhrasesPath_.pathExists()) {
-    std::ofstream ofs(excludedPhrasesPath_.path());
-    if (ofs) {
-      FCITX_MCBOPOMOFO_INFO() << "Creating: " << excludedPhrasesPath_.path();
-      ofs << localizedStrings_->excludedPhraseFileHeader();
-      ofs.close();
-    }
+      SmartLearning::createFileIfAbsent(
+          excludedPhrasesPath_.path(),
+          localizedStrings_->excludedPhraseFileHeader())) {
+    FCITX_MCBOPOMOFO_INFO() << "Created: " << excludedPhrasesPath_.path();
   }
 }
 
@@ -422,6 +418,11 @@ bool LanguageModelLoader::removePhraseFromFile(
 
     content += line;
     content += '\n';
+  }
+  // A failed read must never be written back as if it were the whole file.
+  if (inFile.bad() || !inFile.eof()) {
+    FCITX_MCBOPOMOFO_WARN() << "Failed to read the whole file: " << path;
+    return false;
   }
   inFile.close();
 

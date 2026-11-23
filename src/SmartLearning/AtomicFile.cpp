@@ -1,5 +1,6 @@
 #include "AtomicFile.h"
 
+#include <fcntl.h>
 #include <unistd.h>
 
 #include <fstream>
@@ -35,6 +36,29 @@ bool writeFileAtomically(const fs::path& path, std::string_view content) {
     return false;
   }
   return true;
+}
+
+bool createFileIfAbsent(const fs::path& path, std::string_view content) {
+  int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+  if (fd < 0) {
+    return false;
+  }
+  bool ok = true;
+  const char* data = content.data();
+  size_t left = content.size();
+  while (left > 0) {
+    ssize_t n = ::write(fd, data, left);
+    if (n < 0) {
+      ok = false;
+      break;
+    }
+    data += n;
+    left -= static_cast<size_t>(n);
+  }
+  if (::close(fd) != 0) {
+    ok = false;
+  }
+  return ok;
 }
 
 }  // namespace McBopomofo::SmartLearning

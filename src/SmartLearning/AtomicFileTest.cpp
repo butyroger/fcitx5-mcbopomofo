@@ -69,4 +69,24 @@ TEST_F(AtomicFileTest, FailedRenameCleansTempFile) {
   EXPECT_EQ(entryCount(), 1u);
 }
 
+TEST_F(AtomicFileTest, CreateFileIfAbsentCreatesNewFile) {
+  auto p = folder_ / "data.txt";
+  EXPECT_TRUE(createFileIfAbsent(p, "# header\n"));
+  EXPECT_EQ(slurp(p), "# header\n");
+}
+
+TEST_F(AtomicFileTest, CreateFileIfAbsentNeverTouchesExistingFile) {
+  auto p = folder_ / "data.txt";
+  {
+    std::ofstream out(p, std::ios::binary);
+    out << "synthetic 1 2\nsynthetic 3 4\n";
+  }
+  EXPECT_FALSE(createFileIfAbsent(p, "# header\n"));
+  EXPECT_EQ(slurp(p), "synthetic 1 2\nsynthetic 3 4\n");
+}
+
+TEST_F(AtomicFileTest, CreateFileIfAbsentFailsWhenFolderMissing) {
+  EXPECT_FALSE(createFileIfAbsent(folder_ / "nope" / "data.txt", "x"));
+}
+
 }  // namespace McBopomofo::SmartLearning
