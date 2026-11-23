@@ -415,4 +415,14 @@ TEST(ReadingFillerTest, BuiltInData) {
   EXPECT_EQ(filler.readingFor("台灣\xF0\xA0\x80\x80"), "ㄊㄞˊ-ㄨㄢ-？");
 }
 
+TEST(ReadingFillerTest, Preload) {
+  ReadingFiller filler(MCBOPOMOFO_TEST_FULL_DATA_PATH);
+  filler.preload();
+  filler.preload();
+  EXPECT_EQ(filler.readingFor("台灣"), "ㄊㄞˊ-ㄨㄢ");
+  ReadingFiller missing("/nonexistent/mcbopomofo-data.txt");
+  missing.preload();
+  EXPECT_EQ(missing.readingFor("台灣"), "");
+}
+
 }  // namespace McBopomofo::VocabularyManager

@@ -6,13 +6,16 @@
 add_library(VocabularyManagerCore STATIC
         FileVocabulary.h
         FileVocabulary.cpp
+        LearnedVocabulary.h
+        LearnedVocabulary.cpp
         ManagerSettings.h
         ManagerSettings.cpp)
 target_include_directories(VocabularyManagerCore PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(VocabularyManagerCore PUBLIC SmartLearningLib)
 
 if (ENABLE_TEST)
-        add_executable(VocabularyManagerTest VocabularyManagerTest.cpp)
+        add_executable(VocabularyManagerTest VocabularyManagerTest.cpp
+                LearnedVocabularyTest.cpp)
         target_link_libraries(VocabularyManagerTest GTest::gtest_main VocabularyManagerCore)
         target_compile_definitions(VocabularyManagerTest PRIVATE
                 MCBOPOMOFO_TEST_FULL_DATA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../../data/data.txt")

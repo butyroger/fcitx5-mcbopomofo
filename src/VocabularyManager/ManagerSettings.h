@@ -65,6 +65,8 @@ std::filesystem::path findBuiltInData(
 struct Settings {
   std::filesystem::path dataFolder;
   std::string deviceID;
+  // The computer's name, which the input method's file names carry too.
+  std::string hostName;
   // Without a device ID (the input method has never run), nothing is
   // written.
   bool readOnly = true;
@@ -80,6 +82,24 @@ struct Settings {
 // file is resolved as the input method does (resolveUserDataFolder()).
 Settings resolveSettings(const LaunchOptions& options, const GetEnv& env,
                          std::string_view hostName);
+
+// The arguments of a second launch, sent to the window already open: each
+// argument followed by a NUL. An argument may hold any other character.
+std::string encodeLaunchMessage(const std::vector<std::string>& arguments);
+
+// The arguments in |message|; none when it holds no NUL (a message that only
+// asks to bring the window to the front).
+std::vector<std::string> decodeLaunchMessage(std::string_view message);
+
+// The settings of the open window when it is opened again with |options|:
+// a read-only window opened with a device ID (by the input method) takes the
+// device ID, and the data folder if one is given, and can then write.
+// nullopt when nothing changes: no device ID is given, or the window can
+// already write.
+std::optional<Settings> adoptLaunch(const Settings& current,
+                                    const LaunchOptions& options,
+                                    const GetEnv& env,
+                                    std::string_view hostName);
 
 }  // namespace McBopomofo::VocabularyManager
 

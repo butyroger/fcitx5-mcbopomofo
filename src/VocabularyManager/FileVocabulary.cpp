@@ -211,21 +211,26 @@ ReadingFiller::ReadingFiller(fs::path dataFile)
 
 ReadingFiller::~ReadingFiller() = default;
 
+void ReadingFiller::preload() {
+  if (loaded_) {
+    return;
+  }
+  loaded_ = true;
+  if (!dataFile_.empty()) {
+    auto lm = std::make_unique<McBopomofoLM>();
+    lm->loadLanguageModel(dataFile_.c_str());
+    if (lm->isDataModelLoaded()) {
+      lm_ = std::move(lm);
+    }
+  }
+}
+
 std::string ReadingFiller::readingFor(std::string_view phrase) {
   std::string trimmed = trimSpaces(phrase);
   if (trimmed.empty()) {
     return {};
   }
-  if (!loaded_) {
-    loaded_ = true;
-    if (!dataFile_.empty()) {
-      auto lm = std::make_unique<McBopomofoLM>();
-      lm->loadLanguageModel(dataFile_.c_str());
-      if (lm->isDataModelLoaded()) {
-        lm_ = std::move(lm);
-      }
-    }
-  }
+  preload();
   if (!lm_) {
     return {};
   }

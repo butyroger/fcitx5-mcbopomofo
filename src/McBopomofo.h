@@ -40,6 +40,7 @@
 #include <memory>
 #include <string>
 #include <type_traits>
+#include <vector>
 
 #include "InputState.h"
 #include "KeyHandler.h"
@@ -92,6 +93,32 @@ inline const Formosa::Mandarin::BopomofoKeyboardLayout* layoutForConfig(
 inline bool isQuickLayoutChecked(BopomofoKeyboardLayout configured,
                                  BopomofoKeyboardLayout item) {
   return configured == item;
+}
+
+// The vocabulary manager, when it is built with the input method.
+#ifdef MCBOPOMOFO_VOCABULARY_MANAGER_PATH
+inline constexpr bool kHasVocabularyManager = true;
+inline constexpr char kVocabularyManagerPath[] =
+    MCBOPOMOFO_VOCABULARY_MANAGER_PATH;
+#else
+inline constexpr bool kHasVocabularyManager = false;
+inline constexpr char kVocabularyManagerPath[] = "";
+#endif
+
+// The command that opens the vocabulary manager |program| on the user data
+// folder and as the device of the input method. What is empty is left out,
+// for the manager to read from the config file.
+inline std::vector<std::string> vocabularyManagerCommand(
+    const std::string& program, const std::string& userDataPath,
+    const std::string& deviceID) {
+  std::vector<std::string> command{program};
+  if (!userDataPath.empty()) {
+    command.insert(command.end(), {"--data-folder", userDataPath});
+  }
+  if (!deviceID.empty()) {
+    command.insert(command.end(), {"--device-id", deviceID});
+  }
+  return command;
 }
 
 enum class SelectionKeys {
@@ -515,6 +542,8 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::unique_ptr<fcitx::SimpleAction> bopomofoFontAnnotationSupportAction_;
   std::unique_ptr<fcitx::SimpleAction> editUserPhrasesAction_;
   std::unique_ptr<fcitx::SimpleAction> excludedPhrasesAction_;
+  // Only when the vocabulary manager is built.
+  std::unique_ptr<fcitx::SimpleAction> manageVocabularyAction_;
 };
 
 class McBopomofoEngineFactory : public fcitx::AddonFactory {

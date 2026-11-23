@@ -63,6 +63,12 @@ enum class CommitStatus {
   // created.
   kFileMissing,
   kWriteFailed,
+  // Without a device ID, nothing is written.
+  kReadOnly,
+  // An English word has fewer than two letters, or something else.
+  kBadWord,
+  // A sentence that cannot be remembered (see IsValidSentence()).
+  kBadSentence,
 };
 
 struct CommitResult {
@@ -79,7 +85,14 @@ CommitResult commitEntry(FileKind kind, const std::filesystem::path& file,
                          std::string_view field1, std::string_view field2,
                          const std::optional<std::string>& editingKey);
 
-enum class DeleteStatus { kNothingSelected, kDeleted, kFileMissing, kWriteFailed };
+enum class DeleteStatus {
+  kNothingSelected,
+  kDeleted,
+  kFileMissing,
+  kWriteFailed,
+  // Without a device ID, nothing is written.
+  kReadOnly,
+};
 
 // Removes one line of the file for each of |keys|.
 DeleteStatus deleteEntries(const std::filesystem::path& file,
@@ -96,6 +109,10 @@ class ReadingFiller {
   // spaces. Empty when the phrase is empty, nothing in it is found, or the
   // data cannot be loaded.
   std::string readingFor(std::string_view phrase);
+
+  // Loads the built-in phrase data now, if not yet loaded, so that the first
+  // reading asked for comes at once.
+  void preload();
 
  private:
   std::filesystem::path dataFile_;

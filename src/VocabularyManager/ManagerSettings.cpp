@@ -206,12 +206,46 @@ Settings resolveSettings(const LaunchOptions& options, const GetEnv& env,
         config.userDataFolder, defaultUserDataFolder(env), &settings.warning);
   }
   settings.deviceID = options.deviceID ? *options.deviceID : config.deviceID;
+  settings.hostName = std::string(hostName);
   settings.readOnly = settings.deviceID.empty();
   if (!settings.readOnly) {
     settings.ownLearningFilename = SmartLearning::learningFilename(
         settings.deviceID, SmartLearning::sanitizeDeviceName(hostName));
   }
   return settings;
+}
+
+std::string encodeLaunchMessage(const std::vector<std::string>& arguments) {
+  std::string message;
+  for (const auto& argument : arguments) {
+    message += argument;
+    message += '\0';
+  }
+  return message;
+}
+
+std::vector<std::string> decodeLaunchMessage(std::string_view message) {
+  std::vector<std::string> arguments;
+  size_t start = 0;
+  while (true) {
+    size_t end = message.find('\0', start);
+    if (end == std::string_view::npos) {
+      break;
+    }
+    arguments.emplace_back(message.substr(start, end - start));
+    start = end + 1;
+  }
+  return arguments;
+}
+
+std::optional<Settings> adoptLaunch(const Settings& current,
+                                    const LaunchOptions& options,
+                                    const GetEnv& env,
+                                    std::string_view hostName) {
+  if (!current.readOnly || !options.deviceID || options.deviceID->empty()) {
+    return std::nullopt;
+  }
+  return resolveSettings(options, env, hostName);
 }
 
 }  // namespace McBopomofo::VocabularyManager

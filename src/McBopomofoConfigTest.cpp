@@ -81,4 +81,25 @@ TEST(McBopomofoConfigTest, QuickLayoutCheckedFollowsTheConfig) {
                                     BopomofoKeyboardLayout::Hsu));
 }
 
+TEST(McBopomofoConfigTest, VocabularyManagerCommand) {
+  EXPECT_EQ(vocabularyManagerCommand("/usr/bin/mcbopomofo-vocabulary",
+                                     "/home/u/data folder", "ABCD1234"),
+            (std::vector<std::string>{"/usr/bin/mcbopomofo-vocabulary",
+                                      "--data-folder", "/home/u/data folder",
+                                      "--device-id", "ABCD1234"}));
+  // What is not known is left for the manager to read from the config.
+  EXPECT_EQ(vocabularyManagerCommand("/usr/bin/mcbopomofo-vocabulary", "", ""),
+            (std::vector<std::string>{"/usr/bin/mcbopomofo-vocabulary"}));
+}
+
+TEST(McBopomofoConfigTest, VocabularyManagerMenuItemWhenBuilt) {
+#ifdef MCBOPOMOFO_VOCABULARY_MANAGER_PATH
+  EXPECT_TRUE(kHasVocabularyManager);
+  std::string path = kVocabularyManagerPath;
+  EXPECT_EQ(path.substr(path.rfind('/') + 1), "mcbopomofo-vocabulary");
+#else
+  EXPECT_FALSE(kHasVocabularyManager);
+#endif
+}
+
 }  // namespace McBopomofo

@@ -43,6 +43,11 @@ jobs:
         run: |
           cd build
           ctest --output-on-failure
+      # Qt 6 is installed, so a vocabulary manager left out is a failure.
+      - name: Check the vocabulary manager is built
+        if: matrix.os == 'ubuntu:24.04'
+        run: |
+          test -x build/src/VocabularyManager/mcbopomofo-vocabulary
 
   build_archlinux:
     runs-on: ubuntu-24.04

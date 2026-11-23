@@ -705,3 +705,90 @@ msgid ""
 "The input method has not run yet, so the vocabulary can only be viewed. "
 "Switch to McBopomofo once, then open this window again."
 msgstr "輸入法還沒啟動過，詞彙只能瀏覽。請先切換到小麥注音一次，再重新開啟此視窗。"
+
+#: src/McBopomofo.cpp
+msgid "Manage Vocabulary…"
+msgstr "管理詞彙…"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "English Words"
+msgstr "英文詞彙"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Common Sentences"
+msgstr "常用句"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Temporary Phrases"
+msgstr "暫存詞"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid ""
+"Words typed twice or more, or added here, come first in the English "
+"completions with Tab."
+msgstr "打過兩次以上或在這裡加入的英文字，按 Tab 英文聯想時排在最前面。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid ""
+"A sentence sent three times is remembered, and the rest of it is suggested "
+"after typing its beginning, to be taken with Tab. Sentences added here are "
+"remembered at once and never forgotten."
+msgstr ""
+"同一句送出三次就會記住，之後打出開頭會提示後半句，按 Tab 接上。在這裡加入的句"
+"子立即生效、不會被遺忘。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid ""
+"Phrases picked once come first for 30 days, and are added to the Chinese "
+"phrases when typed again."
+msgstr "手動選過一次的詞，30 天內優先出現；再打出來送出一次就加入中文詞彙。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Word"
+msgstr "英文字"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Times"
+msgstr "次數"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Sentence"
+msgstr "句子"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Status"
+msgstr "狀態"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Picked"
+msgstr "選取日期"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Added"
+msgstr "手動加入"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Remembered"
+msgstr "已記住"
+
+#: src/VocabularyManager/MainWindow.cpp
+#, qt-format
+msgid "%1 more times"
+msgstr "還差 %1 次"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "An English word has two or more letters."
+msgstr "英文字至少要兩個字母。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "A sentence has 6 to 40 characters or words, without punctuation."
+msgstr "句子要 6 到 40 個字（英文單字算一個），不能有標點。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Add to Chinese Phrases"
+msgstr "加入中文詞彙"
+
+#: src/VocabularyManager/MainWindow.cpp
+#, qt-format
+msgid "Added %1 to the Chinese phrases."
+msgstr "已將 %1 筆加入中文詞彙。"

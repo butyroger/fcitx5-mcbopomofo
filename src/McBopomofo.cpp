@@ -728,6 +728,20 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
       });
   instance_->userInterfaceManager().registerAction(
       "mcbopomofo-user-excluded-phrases-edit", excludedPhrasesAction_.get());
+
+  if constexpr (kHasVocabularyManager) {
+    manageVocabularyAction_ = std::make_unique<fcitx::SimpleAction>();
+    manageVocabularyAction_->setShortText(_("Manage Vocabulary…"));
+    manageVocabularyAction_->connect<fcitx::SimpleAction::Activated>(
+        [this](fcitx::InputContext*) {
+          // The manager writes as this device, in the folder in use.
+          fcitx::startProcess(vocabularyManagerCommand(
+              kVocabularyManagerPath, languageModelLoader_->userDataPath(),
+              config_.deviceID.value()));
+        });
+    instance_->userInterfaceManager().registerAction(
+        "mcbopomofo-manage-vocabulary", manageVocabularyAction_.get());
+  }
 }
 
 McBopomofoEngine::~McBopomofoEngine() {
@@ -949,8 +963,13 @@ void McBopomofoEngine::reloadConfig() {
   fcitx::readAsIni(config_, kConfigPath);
   applyUserDataFolder();
   applySmartOptions();
-  // The vocabulary manager asks for this after writing the learned data.
+  // The vocabulary manager asks for this after writing the learned data,
+  // the user phrases, the excluded phrases or the text templates.
   recheckLearningFiles();
+  // The constructor reads the config before the language model exists.
+  if (languageModelLoader_ && languageModelLoader_->reloadUserModelsIfNeeded()) {
+    userFileIssues_ = languageModelLoader_->getUserFileIssues();
+  }
 }
 
 void McBopomofoEngine::recheckLearningFiles() {
@@ -1117,6 +1136,11 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
                                          editUserPhrasesAction_.get());
     inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
                                          excludedPhrasesAction_.get());
+  }
+  // In both input modes.
+  if (manageVocabularyAction_) {
+    inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
+                                         manageVocabularyAction_.get());
   }
 
   keyHandler_->setInputMode(mode);

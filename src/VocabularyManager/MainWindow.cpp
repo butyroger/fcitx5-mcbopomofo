@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QTabBar>
 #include <QTreeWidget>
 #include <QUrl>
@@ -39,20 +40,37 @@ constexpr int kNarrowColumnWidth = 110;
 
 MainWindow::MainWindow(Settings settings, fs::path builtInData)
     : settings_(std::move(settings)), readingFiller_(std::move(builtInData)) {
+  learned_ = std::make_unique<LearnedVocabulary>(
+      settings_.dataFolder, settings_.deviceID, settings_.hostName);
+  QStringList phraseColumns{_("Phrase"), _("Reading")};
   pages_ = {
-      {FileKind::kPhrases, _("Chinese Phrases"),
+      {PageKind::kPhrases, _("Chinese Phrases"),
        _("Phrases added here come first in the candidates. The reading is "
          "filled in automatically, and can be changed for a character with "
          "more than one reading."),
-       {_("Phrase"), _("Reading")}, {_("Phrase"), _("Reading")}, true},
-      {FileKind::kExcluded, C_("Vocabulary", "Excluded Phrases"),
+       phraseColumns, phraseColumns, true, true, true},
+      {PageKind::kExcluded, C_("Vocabulary", "Excluded Phrases"),
        _("Phrases listed here never appear in the candidates, such as "
          "excluding 你 to have 妳 first."),
-       {_("Phrase"), _("Reading")}, {_("Phrase"), _("Reading")}, true},
-      {FileKind::kTemplates, _("Text Templates"),
+       phraseColumns, phraseColumns, true, true, true},
+      {PageKind::kEnglish, _("English Words"),
+       _("Words typed twice or more, or added here, come first in the "
+         "English completions with Tab."),
+       {_("Word"), _("Times")}, {_("Word")}, false, false, false},
+      {PageKind::kSentences, _("Common Sentences"),
+       _("A sentence sent three times is remembered, and the rest of it is "
+         "suggested after typing its beginning, to be taken with Tab. "
+         "Sentences added here are remembered at once and never forgotten."),
+       {_("Sentence"), _("Times"), _("Status")}, {_("Sentence")}, false, false,
+       false},
+      {PageKind::kTemporary, _("Temporary Phrases"),
+       _("Phrases picked once come first for 30 days, and are added to the "
+         "Chinese phrases when typed again."),
+       {_("Phrase"), _("Reading"), _("Picked")}, {}, false, false, false},
+      {PageKind::kTemplates, _("Text Templates"),
        _("Press ` and type the code to insert the text. Write \\n for a line "
          "break."),
-       {_("Code"), _("Text")}, {_("Code"), _("Text")}, false},
+       {_("Code"), _("Text")}, {_("Code"), _("Text")}, false, true, true},
   };
 
   setWindowTitle(_("Manage Vocabulary"));
@@ -120,6 +138,7 @@ MainWindow::MainWindow(Settings settings, fs::path builtInData)
   auto* buttonRow = new QHBoxLayout();
   editButton_ = new QPushButton(_("Edit"), this);
   deleteButton_ = new QPushButton(_("Delete"), this);
+  addToPhrasesButton_ = new QPushButton(_("Add to Chinese Phrases"), this);
   message_ = new QLabel(this);
   message_->setWordWrap(true);
   message_->setForegroundRole(QPalette::PlaceholderText);
@@ -127,6 +146,7 @@ MainWindow::MainWindow(Settings settings, fs::path builtInData)
   revealButton_ = new QPushButton(_("Show in File Manager"), this);
   buttonRow->addWidget(editButton_);
   buttonRow->addWidget(deleteButton_);
+  buttonRow->addWidget(addToPhrasesButton_);
   buttonRow->addWidget(message_, 1);
   buttonRow->addWidget(revealButton_);
   layout->addLayout(buttonRow);
@@ -150,6 +170,8 @@ MainWindow::MainWindow(Settings settings, fs::path builtInData)
   connect(editButton_, &QPushButton::clicked, this, &MainWindow::beginEditing);
   connect(deleteButton_, &QPushButton::clicked, this,
           &MainWindow::deleteSelected);
+  connect(addToPhrasesButton_, &QPushButton::clicked, this,
+          &MainWindow::addSelectedToPhrases);
   connect(revealButton_, &QPushButton::clicked, this, &MainWindow::revealFile);
 
   pageChanged(0);
@@ -159,8 +181,43 @@ MainWindow::~MainWindow() = default;
 
 const MainWindow::Page& MainWindow::page() const { return pages_[pageIndex_]; }
 
+std::optional<FileKind> MainWindow::pageFileKind() const {
+  switch (page().kind) {
+    case PageKind::kPhrases:
+      return FileKind::kPhrases;
+    case PageKind::kExcluded:
+      return FileKind::kExcluded;
+    case PageKind::kTemplates:
+      return FileKind::kTemplates;
+    default:
+      return std::nullopt;
+  }
+}
+
+std::optional<LearnedKind> MainWindow::pageLearnedKind() const {
+  switch (page().kind) {
+    case PageKind::kEnglish:
+      return LearnedKind::kEnglish;
+    case PageKind::kSentences:
+      return LearnedKind::kSentences;
+    case PageKind::kTemporary:
+      return LearnedKind::kTemporary;
+    default:
+      return std::nullopt;
+  }
+}
+
 fs::path MainWindow::pageFile() const {
-  return vocabularyFile(settings_.dataFolder, page().kind);
+  if (auto kind = pageFileKind()) {
+    return vocabularyFile(settings_.dataFolder, *kind);
+  }
+  return {};
+}
+
+SentenceStatusTexts MainWindow::sentenceStatusTexts() const {
+  return {str(_("Added")), str(_("Remembered")), [](long long times) {
+            return str(_("%1 more times").arg(times));
+          }};
 }
 
 int MainWindow::pageCount() const { return static_cast<int>(pages_.size()); }
@@ -186,6 +243,16 @@ void MainWindow::bringToFront() {
   activateWindow();
 }
 
+void MainWindow::adoptSettings(Settings settings) {
+  settings_ = std::move(settings);
+  learned_ = std::make_unique<LearnedVocabulary>(
+      settings_.dataFolder, settings_.deviceID, settings_.hostName);
+  message_->clear();
+  reload();
+}
+
+void MainWindow::preloadReadings() { readingFiller_.preload(); }
+
 bool MainWindow::event(QEvent* event) {
   // The input method and other computers may change the files while the
   // window is open.
@@ -204,27 +271,42 @@ void MainWindow::pageChanged(int index) {
   help_->setText(p.help);
   list_->setColumnCount(static_cast<int>(p.columns.size()));
   list_->setHeaderLabels(p.columns);
-  // The first column and the wide second column (the reading, the text)
-  // stretch; the others are narrow.
+  // The first column, and the second where it is wide, stretch; the others
+  // are narrow.
   for (int column = 0; column < static_cast<int>(p.columns.size());
        ++column) {
-    if (column <= 1) {
+    if (column == 0 || (column == 1 && p.wideSecondColumn)) {
       list_->header()->setSectionResizeMode(column, QHeaderView::Stretch);
     } else {
       list_->header()->setSectionResizeMode(column, QHeaderView::Fixed);
       list_->header()->resizeSection(column, kNarrowColumnWidth);
     }
   }
+  bool twoFields = p.fields.size() > 1;
   field1_->setPlaceholderText(p.fields.value(0));
+  field1_->setMaximumWidth(twoFields ? 200 : QWIDGETSIZE_MAX);
   field2_->setPlaceholderText(p.fields.value(1));
+  field2_->setVisible(twoFields);
   editor_->setVisible(!p.fields.isEmpty());
+  editButton_->setVisible(p.canEdit);
+  addToPhrasesButton_->setVisible(p.kind == PageKind::kTemporary);
   cancelEditing();
   selection_.clear();
   reload();
+  list_->scrollToTop();
+}
+
+void MainWindow::loadRows() {
+  if (auto kind = pageFileKind()) {
+    rows_ = VocabularyManager::loadRows(*kind, pageFile());
+  } else {
+    rows_ = learned_->rows(*pageLearnedKind(), sentenceStatusTexts());
+  }
 }
 
 void MainWindow::reload() {
-  rows_ = loadRows(page().kind, pageFile());
+  int scrolled = list_->verticalScrollBar()->value();
+  loadRows();
   std::set<std::string> ids;
   for (const auto& row : rows_) {
     ids.insert(row.id);
@@ -238,6 +320,7 @@ void MainWindow::reload() {
   selection_ = std::move(kept);
   updateNotice();
   showRows();
+  list_->verticalScrollBar()->setValue(scrolled);
 }
 
 void MainWindow::showRows() {
@@ -288,7 +371,9 @@ void MainWindow::updateNotice() {
     notices << qstr(settings_.warning);
   }
   std::error_code ec;
-  if (!fs::exists(pageFile(), ec)) {
+  // The learned entries are in a folder of the user data folder.
+  fs::path file = pageFileKind() ? pageFile() : settings_.dataFolder;
+  if (!fs::exists(file, ec)) {
     notices << _("The file was not found. The vocabulary folder may still be "
                  "syncing.");
   }
@@ -305,6 +390,7 @@ void MainWindow::updateButtons() {
   cancelButton_->setVisible(editingKey_.has_value());
   editButton_->setEnabled(writable && selection_.size() == 1);
   deleteButton_->setEnabled(writable && !selection_.empty());
+  addToPhrasesButton_->setEnabled(writable && !selection_.empty());
 }
 
 std::vector<const VocabularyRow*> MainWindow::selectedRows() const {
@@ -330,7 +416,7 @@ void MainWindow::readingEdited() { readingTyped_ = true; }
 
 void MainWindow::beginEditing() {
   auto selected = selectedRows();
-  if (settings_.readOnly || selected.size() != 1) {
+  if (settings_.readOnly || !page().canEdit || selected.size() != 1) {
     return;
   }
   const VocabularyRow& row = *selected.front();
@@ -351,41 +437,81 @@ void MainWindow::cancelEditing() {
   updateButtons();
 }
 
+bool MainWindow::showFailure(CommitStatus status, const std::string& value) {
+  switch (status) {
+    case CommitStatus::kAdded:
+    case CommitStatus::kSaved:
+      return false;
+    case CommitStatus::kNothingTyped:
+    case CommitStatus::kReadOnly:
+      QApplication::beep();
+      break;
+    case CommitStatus::kBadReading:
+      message_->setText(
+          _("Please type the reading in Bopomofo, with \"-\" between "
+            "syllables, like ㄒㄧㄠˇ-ㄇㄞˋ."));
+      break;
+    case CommitStatus::kAlreadyListed:
+      message_->setText(_("\"%1\" is already in the list.").arg(qstr(value)));
+      break;
+    case CommitStatus::kBadTemplate:
+      message_->setText(_("Please type the code and the text."));
+      break;
+    case CommitStatus::kBadWord:
+      message_->setText(_("An English word has two or more letters."));
+      break;
+    case CommitStatus::kBadSentence:
+      message_->setText(_("A sentence has 6 to 40 characters or words, "
+                          "without punctuation."));
+      break;
+    case CommitStatus::kFileMissing:
+      message_->setText(_("The file was not found. The vocabulary folder may "
+                          "still be syncing."));
+      reload();
+      break;
+    case CommitStatus::kWriteFailed:
+      message_->setText(_("The file could not be written."));
+      break;
+  }
+  return true;
+}
+
+bool MainWindow::showFailure(DeleteStatus status) {
+  switch (status) {
+    case DeleteStatus::kDeleted:
+      return false;
+    case DeleteStatus::kNothingSelected:
+    case DeleteStatus::kReadOnly:
+      QApplication::beep();
+      break;
+    case DeleteStatus::kFileMissing:
+      message_->setText(_("The file was not found. The vocabulary folder may "
+                          "still be syncing."));
+      reload();
+      break;
+    case DeleteStatus::kWriteFailed:
+      message_->setText(_("The file could not be written."));
+      reload();
+      break;
+  }
+  return true;
+}
+
 void MainWindow::commit() {
   if (settings_.readOnly) {
     QApplication::beep();
     return;
   }
   bool editing = editingKey_.has_value();
-  auto result = commitEntry(page().kind, pageFile(), str(field1_->text()),
-                            str(field2_->text()), editingKey_);
-  switch (result.status) {
-    case CommitStatus::kNothingTyped:
-      QApplication::beep();
-      return;
-    case CommitStatus::kBadReading:
-      message_->setText(
-          _("Please type the reading in Bopomofo, with \"-\" between "
-            "syllables, like ㄒㄧㄠˇ-ㄇㄞˋ."));
-      return;
-    case CommitStatus::kAlreadyListed:
-      message_->setText(
-          _("\"%1\" is already in the list.").arg(qstr(result.value)));
-      return;
-    case CommitStatus::kBadTemplate:
-      message_->setText(_("Please type the code and the text."));
-      return;
-    case CommitStatus::kFileMissing:
-      message_->setText(_("The file was not found. The vocabulary folder may "
-                          "still be syncing."));
-      reload();
-      return;
-    case CommitStatus::kWriteFailed:
-      message_->setText(_("The file could not be written."));
-      return;
-    case CommitStatus::kAdded:
-    case CommitStatus::kSaved:
-      break;
+  CommitResult result;
+  if (auto kind = pageFileKind()) {
+    result = commitEntry(*kind, pageFile(), str(field1_->text()),
+                         str(field2_->text()), editingKey_);
+  } else {
+    result = learned_->add(*pageLearnedKind(), str(field1_->text()));
+  }
+  if (showFailure(result.status, result.value)) {
+    return;
   }
   notifyInputMethod();
   message_->setText(editing ? _("Saved.")
@@ -403,30 +529,50 @@ void MainWindow::deleteSelected() {
     QApplication::beep();
     return;
   }
-  switch (deleteEntries(pageFile(), keys)) {
-    case DeleteStatus::kNothingSelected:
-      QApplication::beep();
-      return;
-    case DeleteStatus::kFileMissing:
-      message_->setText(_("The file was not found. The vocabulary folder may "
-                          "still be syncing."));
-      reload();
-      return;
-    case DeleteStatus::kWriteFailed:
-      message_->setText(_("The file could not be written."));
-      return;
-    case DeleteStatus::kDeleted:
-      break;
+  BatchResult result{DeleteStatus::kNothingSelected, 0};
+  if (pageFileKind()) {
+    result.status = deleteEntries(pageFile(), keys);
+    result.done = result.status == DeleteStatus::kDeleted ? keys.size() : 0;
+  } else {
+    result = learned_->remove(*pageLearnedKind(), keys);
   }
-  notifyInputMethod();
+  if (result.done > 0) {
+    notifyInputMethod();
+  }
+  if (showFailure(result.status)) {
+    return;
+  }
   message_->setText(_("Deleted %1.").arg(static_cast<qulonglong>(keys.size())));
   selection_.clear();
   cancelEditing();
   reload();
 }
 
+void MainWindow::addSelectedToPhrases() {
+  std::vector<std::string> keys;
+  for (const auto* row : selectedRows()) {
+    keys.push_back(row->key);
+  }
+  if (settings_.readOnly || page().kind != PageKind::kTemporary) {
+    QApplication::beep();
+    return;
+  }
+  BatchResult result = learned_->addToPhrases(keys);
+  if (result.done > 0) {
+    notifyInputMethod();
+  }
+  if (showFailure(result.status)) {
+    return;
+  }
+  message_->setText(_("Added %1 to the Chinese phrases.")
+                        .arg(static_cast<qulonglong>(keys.size())));
+  selection_.clear();
+  reload();
+}
+
 void MainWindow::revealFile() {
-  fs::path file = pageFile();
+  // The learned entries are shown as their folder.
+  fs::path file = pageFileKind() ? pageFile() : learned_->learningFolder();
   std::error_code ec;
   fs::path shown = fs::exists(file, ec) ? file : settings_.dataFolder;
   QDBusMessage call = QDBusMessage::createMethodCall(

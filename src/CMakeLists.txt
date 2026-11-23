@@ -82,6 +82,12 @@ target_link_libraries(mcbopomofo PRIVATE Fcitx5::Core Fcitx5::Module::Notificati
 target_include_directories(mcbopomofo PRIVATE Fcitx5::Core Fcitx5::Module::Notifications fmt::fmt)
 set_target_properties(mcbopomofo PROPERTIES PREFIX "")
 target_compile_definitions(mcbopomofo PRIVATE FCITX_GETTEXT_DOMAIN=\"fcitx5-mcbopomofo\")
+if (ENABLE_VOCABULARY_MANAGER)
+    # The menu item that opens the vocabulary manager.
+    set(MCBOPOMOFO_VOCABULARY_MANAGER_PATH "${CMAKE_INSTALL_FULL_BINDIR}/mcbopomofo-vocabulary")
+    target_compile_definitions(mcbopomofo PRIVATE
+            MCBOPOMOFO_VOCABULARY_MANAGER_PATH="${MCBOPOMOFO_VOCABULARY_MANAGER_PATH}")
+endif ()
 install(TARGETS mcbopomofo DESTINATION "${FCITX_INSTALL_LIBDIR}/fcitx5")
 
 if (ENABLE_CLANG_TIDY)
@@ -132,6 +138,10 @@ if (ENABLE_TEST)
         target_include_directories(McBopomofoTest PRIVATE Fcitx5::Core fmt::fmt)
         target_compile_definitions(McBopomofoTest PRIVATE
                 MCBOPOMOFO_TEST_FULL_DATA_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../data/data.txt")
+        if (ENABLE_VOCABULARY_MANAGER)
+                target_compile_definitions(McBopomofoTest PRIVATE
+                        MCBOPOMOFO_VOCABULARY_MANAGER_PATH="${MCBOPOMOFO_VOCABULARY_MANAGER_PATH}")
+        endif ()
 
         configure_file(../data/data.txt mcbopomofo-test-data.txt)
 
