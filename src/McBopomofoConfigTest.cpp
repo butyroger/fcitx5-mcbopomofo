@@ -54,4 +54,30 @@ TEST(McBopomofoConfigTest, DefaultsMatchTheMacSetup) {
   EXPECT_FALSE(c.showFullHalfWidthModeIcon.value());
 }
 
+TEST(McBopomofoConfigTest, LayoutForConfig) {
+  using L = Formosa::Mandarin::BopomofoKeyboardLayout;
+  EXPECT_EQ(layoutForConfig(BopomofoKeyboardLayout::Standard),
+            L::StandardLayout());
+  EXPECT_EQ(layoutForConfig(BopomofoKeyboardLayout::Eten), L::ETenLayout());
+  EXPECT_EQ(layoutForConfig(BopomofoKeyboardLayout::Hsu), L::HsuLayout());
+  EXPECT_EQ(layoutForConfig(BopomofoKeyboardLayout::Et26), L::ETen26Layout());
+  EXPECT_EQ(layoutForConfig(BopomofoKeyboardLayout::HanyuPinyin),
+            L::HanyuPinyinLayout());
+  EXPECT_EQ(layoutForConfig(BopomofoKeyboardLayout::IBM), L::IBMLayout());
+}
+
+TEST(McBopomofoConfigTest, QuickLayoutCheckedFollowsTheConfig) {
+  EXPECT_TRUE(isQuickLayoutChecked(BopomofoKeyboardLayout::Standard,
+                                   BopomofoKeyboardLayout::Standard));
+  EXPECT_FALSE(isQuickLayoutChecked(BopomofoKeyboardLayout::Standard,
+                                    BopomofoKeyboardLayout::Hsu));
+  EXPECT_TRUE(isQuickLayoutChecked(BopomofoKeyboardLayout::Hsu,
+                                   BopomofoKeyboardLayout::Hsu));
+  // Another layout checks neither quick item.
+  EXPECT_FALSE(isQuickLayoutChecked(BopomofoKeyboardLayout::Eten,
+                                    BopomofoKeyboardLayout::Standard));
+  EXPECT_FALSE(isQuickLayoutChecked(BopomofoKeyboardLayout::Eten,
+                                    BopomofoKeyboardLayout::Hsu));
+}
+
 }  // namespace McBopomofo

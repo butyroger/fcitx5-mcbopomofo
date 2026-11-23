@@ -61,6 +61,34 @@ FCITX_CONFIG_ENUM_NAME_WITH_I18N(BopomofoKeyboardLayout, N_("standard"),
                                  N_("eten"), N_("hsu"), N_("et26"),
                                  N_("hanyupinyin"), N_("ibm"));
 
+// The key layout the key handler uses for each configured keyboard layout.
+inline const Formosa::Mandarin::BopomofoKeyboardLayout* layoutForConfig(
+    BopomofoKeyboardLayout layout) {
+  switch (layout) {
+    case BopomofoKeyboardLayout::Standard:
+      return Formosa::Mandarin::BopomofoKeyboardLayout::StandardLayout();
+    case BopomofoKeyboardLayout::Eten:
+      return Formosa::Mandarin::BopomofoKeyboardLayout::ETenLayout();
+    case BopomofoKeyboardLayout::Hsu:
+      return Formosa::Mandarin::BopomofoKeyboardLayout::HsuLayout();
+    case BopomofoKeyboardLayout::Et26:
+      return Formosa::Mandarin::BopomofoKeyboardLayout::ETen26Layout();
+    case BopomofoKeyboardLayout::HanyuPinyin:
+      return Formosa::Mandarin::BopomofoKeyboardLayout::HanyuPinyinLayout();
+    case BopomofoKeyboardLayout::IBM:
+      return Formosa::Mandarin::BopomofoKeyboardLayout::IBMLayout();
+  }
+  return Formosa::Mandarin::BopomofoKeyboardLayout::StandardLayout();
+}
+
+// Whether the quick-switch menu item for |item| is checked while the
+// configured layout is |configured|. Layouts other than the two quick items
+// leave both unchecked.
+inline bool isQuickLayoutChecked(BopomofoKeyboardLayout configured,
+                                 BopomofoKeyboardLayout item) {
+  return configured == item;
+}
+
 enum class SelectionKeys {
   Key_123456789,
   Key_asdfghjkl,
@@ -383,6 +411,13 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   // |context|, adding or removing them from the status area per the options.
   void refreshModeIcons(fcitx::InputContext* context);
   void updateChineseEnglishIcon(fcitx::InputContext* context);
+  // Makes the standard/Hsu menu items' checked state follow the configured
+  // layout.
+  void refreshLayoutActions(fcitx::InputContext* context);
+  // Switches to |layout| from the menu: saves it, drops any composing text
+  // without committing, and tells the user.
+  void selectQuickLayout(fcitx::InputContext* context,
+                         BopomofoKeyboardLayout layout, const char* title);
   void showUserDataFolderWarning();
 
   // (Re)starts the 2-second timer after which the learned choices are saved.
@@ -412,6 +447,8 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   fcitx::KeyList selectionKeys_;
   fcitx::KeyList numpadSelectionKeys_;
 
+  std::unique_ptr<fcitx::SimpleAction> layoutStandardAction_;
+  std::unique_ptr<fcitx::SimpleAction> layoutHsuAction_;
   std::unique_ptr<fcitx::SimpleAction> halfWidthPunctuationAction_;
   std::unique_ptr<fcitx::SimpleAction> chineseEnglishModeAction_;
   bool capsLockOn_ = false;

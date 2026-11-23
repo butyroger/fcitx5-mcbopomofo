@@ -535,3 +535,11 @@ msgstr "中／英模式圖示"
 #: src/McBopomofo.h
 msgid "Show the full/half width mode icon"
 msgstr "全／半形模式圖示"
+
+#: src/McBopomofo.cpp
+msgid "Bopomofo - Standard Keyboard"
+msgstr "注音－標準鍵盤"
+
+#: src/McBopomofo.cpp
+msgid "Bopomofo - Hsu Keyboard"
+msgstr "注音－許氏鍵盤"

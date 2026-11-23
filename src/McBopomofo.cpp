@@ -547,6 +547,28 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   instance_->userInterfaceManager().registerAction(
       "mcbopomofo-half-width-punctuation", halfWidthPunctuationAction_.get());
 
+  layoutStandardAction_ = std::make_unique<fcitx::SimpleAction>();
+  layoutStandardAction_->setShortText(_("Bopomofo - Standard Keyboard"));
+  layoutStandardAction_->setCheckable(true);
+  layoutStandardAction_->connect<fcitx::SimpleAction::Activated>(
+      [this](fcitx::InputContext* context) {
+        selectQuickLayout(context, BopomofoKeyboardLayout::Standard,
+                          _("Bopomofo - Standard Keyboard"));
+      });
+  instance_->userInterfaceManager().registerAction(
+      "mcbopomofo-layout-standard", layoutStandardAction_.get());
+
+  layoutHsuAction_ = std::make_unique<fcitx::SimpleAction>();
+  layoutHsuAction_->setShortText(_("Bopomofo - Hsu Keyboard"));
+  layoutHsuAction_->setCheckable(true);
+  layoutHsuAction_->connect<fcitx::SimpleAction::Activated>(
+      [this](fcitx::InputContext* context) {
+        selectQuickLayout(context, BopomofoKeyboardLayout::Hsu,
+                          _("Bopomofo - Hsu Keyboard"));
+      });
+  instance_->userInterfaceManager().registerAction("mcbopomofo-layout-hsu",
+                                                   layoutHsuAction_.get());
+
   chineseEnglishModeAction_ = std::make_unique<fcitx::SimpleAction>();
   instance_->userInterfaceManager().registerAction(
       "mcbopomofo-chinese-english-mode", chineseEnglishModeAction_.get());
@@ -782,9 +804,40 @@ void McBopomofoEngine::applySmartOptions() {
   keyHandler_->setHalfWidthPunctuationAfterEnglish(
       config_.halfWidthPunctuationAfterEnglish.value());
   keyHandler_->setFixEnglishWordCase(config_.fixEnglishWordCase.value());
+  keyHandler_->setKeyboardLayout(
+      layoutForConfig(config_.bopomofoKeyboardLayout.value()));
   if (auto* context = instance_->mostRecentInputContext()) {
     refreshModeIcons(context);
   }
+}
+
+void McBopomofoEngine::refreshLayoutActions(fcitx::InputContext* context) {
+  auto configured = config_.bopomofoKeyboardLayout.value();
+  layoutStandardAction_->setChecked(
+      isQuickLayoutChecked(configured, BopomofoKeyboardLayout::Standard));
+  layoutHsuAction_->setChecked(
+      isQuickLayoutChecked(configured, BopomofoKeyboardLayout::Hsu));
+  if (context != nullptr) {
+    layoutStandardAction_->update(context);
+    layoutHsuAction_->update(context);
+  }
+}
+
+void McBopomofoEngine::selectQuickLayout(fcitx::InputContext* context,
+                                         BopomofoKeyboardLayout layout,
+                                         const char* title) {
+  config_.bopomofoKeyboardLayout.setValue(layout);
+  fcitx::safeSaveAsIni(config_, kConfigPath);
+  keyHandler_->setKeyboardLayout(layoutForConfig(layout));
+  // Whatever was being composed is dropped, not committed.
+  keyHandler_->reset();
+  enterNewState(context, std::make_unique<InputStates::Empty>());
+  if (notifications()) {
+    notifications()->call<fcitx::INotifications::showTip>(
+        "mcbopomofo-layout-switch", _("McBopomofo"), "fcitx_mcbopomofo", title,
+        title, kFcitx5NotificationTimeoutInMs);
+  }
+  refreshLayoutActions(context);
 }
 
 void McBopomofoEngine::updateChineseEnglishIcon(
@@ -797,6 +850,7 @@ void McBopomofoEngine::updateChineseEnglishIcon(
 }
 
 void McBopomofoEngine::refreshModeIcons(fcitx::InputContext* context) {
+  refreshLayoutActions(context);
   auto& statusArea = context->statusArea();
   if (config_.showChineseEnglishModeIcon.value()) {
     // Also shown in Plain mode, where it reflects Caps Lock only.
@@ -833,6 +887,11 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   chttrans();
 
   auto* inputContext = event.inputContext();
+  // The two keyboard items come first in the menu.
+  inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
+                                       layoutStandardAction_.get());
+  inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
+                                       layoutHsuAction_.get());
   if (auto* action =
           instance_->userInterfaceManager().lookupAction("chttrans")) {
     inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
@@ -877,30 +936,8 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
 
   keyHandler_->setInputMode(mode);
 
-  // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
-  const auto* layout =
-      Formosa::Mandarin::BopomofoKeyboardLayout::StandardLayout();
-  switch (config_.bopomofoKeyboardLayout.value()) {
-    case BopomofoKeyboardLayout::Standard:
-      layout = Formosa::Mandarin::BopomofoKeyboardLayout::StandardLayout();
-      break;
-    case BopomofoKeyboardLayout::Eten:
-      layout = Formosa::Mandarin::BopomofoKeyboardLayout::ETenLayout();
-      break;
-    case BopomofoKeyboardLayout::Hsu:
-      layout = Formosa::Mandarin::BopomofoKeyboardLayout::HsuLayout();
-      break;
-    case BopomofoKeyboardLayout::Et26:
-      layout = Formosa::Mandarin::BopomofoKeyboardLayout::ETen26Layout();
-      break;
-    case BopomofoKeyboardLayout::HanyuPinyin:
-      layout = Formosa::Mandarin::BopomofoKeyboardLayout::HanyuPinyinLayout();
-      break;
-    case BopomofoKeyboardLayout::IBM:
-      layout = Formosa::Mandarin::BopomofoKeyboardLayout::IBMLayout();
-      break;
-  }
-  keyHandler_->setKeyboardLayout(layout);
+  keyHandler_->setKeyboardLayout(
+      layoutForConfig(config_.bopomofoKeyboardLayout.value()));
 
   keyHandler_->setSelectPhraseAfterCursorAsCandidate(
       config_.selectPhrase.value() == SelectPhrase::AfterCursor);
