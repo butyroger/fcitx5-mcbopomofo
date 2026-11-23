@@ -126,6 +126,8 @@ void TemporaryPhraseStore::setLearningFolder(fs::path learningFolder) {
     if (!localFilePending_ && unsavedChanges_) {
       save();
     }
+    // While the old folder's own file is pending, what was added or removed
+    // meanwhile is dropped: that file was never read, so writing it is unsafe.
     localPhrases_.clear();
     removedWhilePending_.clear();
     unsavedChanges_ = false;

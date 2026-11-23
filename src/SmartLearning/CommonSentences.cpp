@@ -336,6 +336,8 @@ void CommonSentenceStore::setLearningFolder(fs::path learningFolder) {
     if (!localFilePending_ && unsavedChanges_) {
       save();
     }
+    // While the old folder's own file is pending, what was recorded meanwhile
+    // is dropped: that file was never read, so writing it is unsafe.
     localEntries_.clear();
     unsavedChanges_ = false;
   }
