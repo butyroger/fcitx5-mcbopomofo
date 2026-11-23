@@ -109,4 +109,30 @@ TEST(MixedInputTest, SwitchReminderSkipsTheFirstStateAfterActivation) {
   EXPECT_EQ(step(true), "ABC");
 }
 
+TEST(MixedInputTest, EnglishCompletionPlan) {
+  std::vector<std::string> r{"ㄏㄠˇ", "_literal_ ", "_literal_h", "_literal_e",
+                             "_literal_l"};
+  auto plan = PlanEnglishCompletion(r, 5);
+  ASSERT_TRUE(plan.has_value());
+  EXPECT_EQ(plan->lettersToDelete, 3u);
+  EXPECT_EQ(plan->englishReading, "_english_hel");
+  plan = PlanEnglishCompletion(r, 4);
+  ASSERT_TRUE(plan.has_value());
+  EXPECT_EQ(plan->englishReading, "_english_he");
+  // One letter, or none, is not enough.
+  EXPECT_FALSE(PlanEnglishCompletion(r, 3).has_value());
+  EXPECT_FALSE(PlanEnglishCompletion(r, 2).has_value());
+  EXPECT_FALSE(PlanEnglishCompletion({}, 0).has_value());
+  // A word picked from the completions is not letters.
+  r.push_back("_english_hello");
+  EXPECT_FALSE(PlanEnglishCompletion(r, 6).has_value());
+  // Digits stop the run.
+  EXPECT_FALSE(PlanEnglishCompletion(Letters("a1"), 2).has_value());
+  auto mixed = Letters("1ab");
+  plan = PlanEnglishCompletion(mixed, 3);
+  ASSERT_TRUE(plan.has_value());
+  EXPECT_EQ(plan->lettersToDelete, 2u);
+  EXPECT_EQ(plan->englishReading, "_english_ab");
+}
+
 }  // namespace McBopomofo::SmartLearning

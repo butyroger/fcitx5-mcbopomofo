@@ -157,6 +157,14 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
   const char charCode = key.ascii;
   const auto uCharCode = static_cast<unsigned char>(charCode);
   const bool isPrintableAscii = uCharCode < 0x80 && isprint(uCharCode);
+  const bool isTab = charCode == Key::TAB && !key.shiftPressed;
+  // Tab with nothing composed always goes to the application.
+  const bool isTabWithComposition =
+      isTab && (!reading_.isEmpty() || grid_.length() > 0);
+
+  // Any use of Tab that takes priority over the English completions below
+  // is checked here.
+
   if (smartSwitching && smartEnglishMode_) {
     if (!smartEnglishDigitsOnly_ &&
         convertTrailingEnglishToChinese(charCode, stateCallback)) {
@@ -184,14 +192,33 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       stateCallback(buildInputtingState());
       return true;
     }
-    // Tab lists no English completions here.
-    if (charCode == Key::TAB && !key.shiftPressed) {
-      errorCallback();
+    // Tab lists the completions of the English word, such as associated for
+    // "ass".
+    if (isTabWithComposition) {
+      if (!enterEnglishCompletion(stateCallback)) {
+        errorCallback();
+      }
       return true;
     }
     // Backspace, Enter, Esc and so on are handled as usual.
     setSmartEnglishMode(false);
   } else if (smartSwitching) {
+    // Tab after an unfinished reading takes the keys as English, and lists
+    // the completions, like "hel" (ㄏㄧㄥ in Hsu) and Tab for hello.
+    if (isTabWithComposition && !reading_.isEmpty()) {
+      std::string keys = rawKeysOfCurrentReading();
+      if (!keys.empty() &&
+          std::all_of(keys.begin(), keys.end(), [](char c) {
+            return isalpha(static_cast<unsigned char>(c));
+          })) {
+        switchToSmartEnglish(keys);
+        if (!enterEnglishCompletion(stateCallback)) {
+          stateCallback(buildInputtingState());
+        }
+        return true;
+      }
+    }
+
     // An uppercase letter starts English, like "ChatGPT".
     bool isUppercaseLetter = charCode >= 'A' && charCode <= 'Z';
     if (isUppercaseLetter && !putLowercaseLettersToComposingBuffer_) {
@@ -2233,6 +2260,31 @@ void KeyHandler::switchToSmartEnglish(const std::string& text) {
   insertLiteralText(text);
   setSmartEnglishMode(true);
   smartEnglishDigitsOnly_ = digitsOnly;
+}
+
+bool KeyHandler::enterEnglishCompletion(const StateCallback& stateCallback) {
+  auto plan =
+      SmartLearning::PlanEnglishCompletion(grid_.readings(), grid_.cursor());
+  if (!plan.has_value()) {
+    return false;
+  }
+  // The first candidate is the word itself; with nothing else, there is
+  // nothing to list.
+  if (lm_->getUnigrams(plan->englishReading).size() < 2) {
+    return false;
+  }
+  for (size_t i = 0; i < plan->lettersToDelete; i++) {
+    grid_.deleteReadingBeforeCursor();
+  }
+  grid_.insertReading(plan->englishReading);
+  walk();
+  size_t originalCursor = grid_.cursor();
+  if (selectPhraseAfterCursorAsCandidate_) {
+    grid_.setCursor(originalCursor - 1);
+  }
+  auto inputting = buildInputtingState();
+  stateCallback(buildChoosingCandidateState(inputting.get(), originalCursor));
+  return true;
 }
 
 void KeyHandler::fixCaseOfEnglishWordBeforeCursor() {

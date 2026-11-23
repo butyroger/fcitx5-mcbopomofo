@@ -94,6 +94,24 @@ bool isMixedCase(const std::string& word) {
          word != asciiUppercased(word);
 }
 
+// Whether |letters| appear in |word| in order, not necessarily next to each
+// other.
+bool isSubsequence(std::string_view letters, std::string_view word) {
+  size_t position = 0;
+  for (char letter : letters) {
+    position = word.find(letter, position);
+    if (position == std::string_view::npos) {
+      return false;
+    }
+    position++;
+  }
+  return true;
+}
+
+// The words of the word list looked at for completions, before the words
+// already offered and those over the maximum are left out.
+constexpr size_t kDictionaryCompletions = 40;
+
 // Splits on |separator|. Empty parts are dropped unless |keepEmpty|.
 std::vector<std::string_view> split(std::string_view s, char separator,
                                     bool keepEmpty) {
@@ -259,6 +277,36 @@ bool EnglishLexicon::hasLongerWordWithPrefix(
   return it != words_.end() && it->starts_with(lowercased);
 }
 
+std::vector<std::string> EnglishLexicon::wordsWithPrefix(
+    std::string_view lowercased, size_t limit) const {
+  auto begin = std::lower_bound(words_.begin(), words_.end(), lowercased);
+  if (begin != words_.end() && *begin == lowercased) {
+    ++begin;
+  }
+  auto end = begin;
+  while (end != words_.end() && end->starts_with(lowercased)) {
+    ++end;
+  }
+  std::vector<const std::string*> found;
+  found.reserve(static_cast<size_t>(end - begin));
+  for (auto it = begin; it != end; ++it) {
+    found.push_back(&*it);
+  }
+  // The word list has no word frequencies; short words are the likely ones.
+  auto shorterFirst = [](const std::string* a, const std::string* b) {
+    return a->size() != b->size() ? a->size() < b->size() : *a < *b;
+  };
+  size_t count = std::min(limit, found.size());
+  std::partial_sort(found.begin(), found.begin() + static_cast<long>(count),
+                    found.end(), shorterFirst);
+  std::vector<std::string> result;
+  result.reserve(count);
+  for (size_t i = 0; i < count; i++) {
+    result.push_back(*found[i]);
+  }
+  return result;
+}
+
 // MARK: - EnglishWordStore
 
 EnglishWordStore::EnglishWordStore(
@@ -416,6 +464,76 @@ bool EnglishWordStore::isWordOrPrefix(const std::string& text) {
   }
   // An empty text has no completions.
   return !lowercased.empty() && lexicon_->hasLongerWordWithPrefix(lowercased);
+}
+
+std::vector<std::string> EnglishWordStore::completions(
+    const std::string& word) {
+  if (characterCount(word) < 2) {
+    return {};
+  }
+  loadIfNeeded();
+  const std::string lowercased = asciiLowercased(word);
+
+  // The most typed first; on a tie, the smallest word.
+  std::vector<std::pair<std::string, long long>> byCount(counts_.begin(),
+                                                         counts_.end());
+  std::sort(byCount.begin(), byCount.end(), [](const auto& a, const auto& b) {
+    return a.second != b.second ? a.second > b.second : a.first < b.first;
+  });
+
+  // Typed words that start with the word, such as ChatGPT for "chat", and
+  // then those that have its letters in order, such as associated for
+  // "aocd".
+  std::vector<const std::pair<std::string, long long>*> typed;
+  for (const auto& entry : byCount) {
+    if (asciiLowercased(entry.first).starts_with(lowercased)) {
+      typed.push_back(&entry);
+    }
+  }
+  for (const auto& entry : byCount) {
+    const std::string key = asciiLowercased(entry.first);
+    if (!key.empty() && key[0] == lowercased[0] &&
+        isSubsequence(lowercased, key)) {
+      typed.push_back(&entry);
+    }
+  }
+
+  std::vector<std::string> results;
+  for (const auto* entry : typed) {
+    if (entry->second >= 2) {
+      results.push_back(entry->first);
+    }
+  }
+  for (auto& dictionaryWord :
+       lexicon_->wordsWithPrefix(lowercased, kDictionaryCompletions)) {
+    results.push_back(std::move(dictionaryWord));
+  }
+  // A word typed once may be a typo, so it comes after the word list.
+  for (const auto* entry : typed) {
+    if (entry->second < 2) {
+      results.push_back(entry->first);
+    }
+  }
+
+  const bool capitalized = isAsciiUpper(word[0]);
+  std::set<std::string> seen{word};
+  std::vector<std::string> unique;
+  for (auto& candidate : results) {
+    // Only single words, which the composing buffer can hold.
+    if (candidate.empty() || !allAsciiLetters(candidate)) {
+      continue;
+    }
+    if (capitalized && candidate == asciiLowercased(candidate)) {
+      candidate[0] = static_cast<char>(candidate[0] - 'a' + 'A');
+    }
+    if (seen.insert(candidate).second) {
+      unique.push_back(std::move(candidate));
+    }
+    if (unique.size() >= kMaximumCompletions) {
+      break;
+    }
+  }
+  return unique;
 }
 
 void EnglishWordStore::loadIfNeeded() {

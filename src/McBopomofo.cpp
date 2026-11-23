@@ -493,6 +493,11 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
                    std::chrono::system_clock::now().time_since_epoch())
             .count();
       });
+  // The completions listed with Tab for an English word.
+  languageModelLoader_->getLM()->setEnglishCompletionProvider(
+      [store = englishWordStore_](const std::string& word) {
+        return store->completions(word);
+      });
   applyUserDataFolder();
   applyLearningFolder();
   keyHandler_ = std::make_shared<KeyHandler>(

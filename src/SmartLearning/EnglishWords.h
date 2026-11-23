@@ -33,6 +33,12 @@ class EnglishLexicon {
   // "helpful" for "helpf".
   bool hasLongerWordWithPrefix(std::string_view lowercased) const;
 
+  // At most |limit| words that start with |lowercased| and are longer than
+  // it, the shorter ones first, and words of the same length in alphabetical
+  // order.
+  std::vector<std::string> wordsWithPrefix(std::string_view lowercased,
+                                           size_t limit) const;
+
   [[nodiscard]] size_t size() const { return words_.size(); }
 
  private:
@@ -62,6 +68,7 @@ class EnglishWordStore {
  public:
   static constexpr size_t kMinimumLength = 3;
   static constexpr double kReloadInterval = 60;  // seconds
+  static constexpr size_t kMaximumCompletions = 20;
 
   EnglishWordStore(std::string deviceID, std::string deviceName,
                    std::shared_ptr<const EnglishLexicon> lexicon,
@@ -97,6 +104,17 @@ class EnglishWordStore {
   // Whether the text is an English word, or the beginning of one, such as
   // "helpf" for helpful.
   bool isWordOrPrefix(const std::string& text);
+
+  // The words to offer for |word| (of two letters or more), at most
+  // kMaximumCompletions, without |word| itself:
+  //  1. words typed twice or more, the most typed first, that start with the
+  //     word, then those that have its letters in order and the same first
+  //     letter (such as "associated" for "aocd");
+  //  2. words of the word list that start with the word;
+  //  3. the words typed once found as in 1, which may be typos.
+  // Only single words of ASCII letters are offered. When the word starts with
+  // an uppercase letter, the lowercase words offered do as well.
+  std::vector<std::string> completions(const std::string& word);
 
   [[nodiscard]] bool isLocalFilePending() const { return localFilePending_; }
 

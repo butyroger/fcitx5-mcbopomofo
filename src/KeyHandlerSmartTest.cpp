@@ -25,6 +25,7 @@
 // model (which knows the readings of letters put as is) and a small English
 // word list.
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -116,6 +117,10 @@ class KeyHandlerSmartTest : public ::testing::Test {
              "email", "chat"}),
         [] { return 1000.0; });
     englishStore_->setLearningFolder(folder_);
+    lm_->setEnglishCompletionProvider(
+        [store = englishStore_](const std::string& word) {
+          return store->completions(word);
+        });
 
     keyHandler_ = std::make_unique<KeyHandler>(
         lm_, nullptr, std::make_shared<NoOpUserPhraseAdder>(),
@@ -260,6 +265,45 @@ class KeyHandlerSmartTest : public ::testing::Test {
 
   void pressEsc() { press(Key::asciiKey(Key::ESC)); }
 
+  // Presses the key and tells whether it was handled, counting the beeps.
+  bool pressHandled(const Key& key) {
+    return keyHandler_->handle(
+        key, state_.get(),
+        [this](std::unique_ptr<InputState> newState) {
+          take(std::move(newState));
+        },
+        [this] { ++errors_; });
+  }
+
+  std::vector<std::string> candidateValues() {
+    std::vector<std::string> values;
+    if (auto* choosing =
+            dynamic_cast<InputStates::ChoosingCandidate*>(state_.get())) {
+      for (const auto& c : choosing->candidates) {
+        values.push_back(c.value);
+      }
+    }
+    return values;
+  }
+
+  // Picks a candidate of the candidate window that is shown.
+  void selectShownCandidate(const std::string& value) {
+    auto* choosing =
+        dynamic_cast<InputStates::ChoosingCandidate*>(state_.get());
+    ASSERT_NE(choosing, nullptr);
+    for (const auto& c : choosing->candidates) {
+      if (c.value == value) {
+        keyHandler_->candidateSelected(
+            c, choosing->originalCursor,
+            [this](std::unique_ptr<InputState> newState) {
+              take(std::move(newState));
+            });
+        return;
+      }
+    }
+    FAIL() << value << " is not a candidate";
+  }
+
   void restart() {
     keyHandler_->reset();
     state_ = std::make_unique<InputStates::Empty>();
@@ -278,6 +322,7 @@ class KeyHandlerSmartTest : public ::testing::Test {
   int dataWrites_ = 0;
   int phraseLearnedCalls_ = 0;
   int addHookCalls_ = 0;
+  int errors_ = 0;
   std::unique_ptr<InputState> state_ = std::make_unique<InputStates::Empty>();
   std::string committed_;
 };
@@ -889,6 +934,99 @@ TEST_F(KeyHandlerSmartTest, AdjustingKeepsCursorAndOtherPickedCandidates) {
   auto* inputting = dynamic_cast<InputStates::Inputting*>(state_.get());
   ASSERT_NE(inputting, nullptr);
   EXPECT_EQ(keyHandler_->candidateCursorIndex(), 3u);
+}
+
+TEST_F(KeyHandlerSmartTest, TabWithEmptyCompositionGoesToTheApp) {
+  EXPECT_FALSE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_FALSE(pressHandled(Key::asciiKey(Key::TAB, /*shiftPressed=*/true)));
+  EXPECT_EQ(errors_, 0);
+  EXPECT_TRUE(isEmptyState());
+
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
+  EXPECT_FALSE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(errors_, 0);
+}
+
+TEST_F(KeyHandlerSmartTest, TabListsEnglishCompletions) {
+  type("app");
+  ASSERT_TRUE(keyHandler_->isSmartEnglishMode());
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(errors_, 0);
+  EXPECT_EQ(candidateValues(), (std::vector<std::string>{"app", "apple"}));
+
+  selectShownCandidate("apple");
+  EXPECT_EQ(composingBuffer(), "apple");
+  EXPECT_EQ(phraseLearnedCalls_, 0);
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "apple");
+  // The completion picked was recorded on commit: once more makes it a word
+  // typed twice, which comes before the word list.
+  englishStore_->record({"apple"});
+  EXPECT_EQ(englishStore_->completions("ap")[0], "apple");
+}
+
+TEST_F(KeyHandlerSmartTest, TabAfterChineseCompletesOnlyTheEnglishWord) {
+  // 好 is ㄏㄠˇ, then a space between Chinese and English.
+  type("cl3");
+  type("Hel");
+  EXPECT_EQ(composingBuffer(), "好 Hel");
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(candidateValues(),
+            (std::vector<std::string>{"Hel", "Help", "Hello", "Helpful"}));
+  selectShownCandidate("Hello");
+  EXPECT_EQ(composingBuffer(), "好 Hello");
+}
+
+TEST_F(KeyHandlerSmartTest, TabWithoutCompletionsBeeps) {
+  // One letter.
+  type("C");
+  ASSERT_TRUE(keyHandler_->isSmartEnglishMode());
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(errors_, 1);
+  EXPECT_EQ(composingBuffer(), "C");
+
+  // No word starts with the letters.
+  restart();
+  type("Qzx");
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(errors_, 2);
+  EXPECT_EQ(composingBuffer(), "Qzx");
+}
+
+TEST_F(KeyHandlerSmartTest, TabAfterUnfinishedReadingCompletesTheKeys) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  type("hel");
+  EXPECT_EQ(composingBuffer(), "ㄏㄧㄥ");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(errors_, 0);
+  EXPECT_TRUE(keyHandler_->isSmartEnglishMode());
+  auto values = candidateValues();
+  ASSERT_FALSE(values.empty());
+  EXPECT_EQ(values[0], "hel");
+  EXPECT_NE(std::find(values.begin(), values.end(), "hello"), values.end());
+  selectShownCandidate("hello");
+  EXPECT_EQ(composingBuffer(), "hello");
+}
+
+TEST_F(KeyHandlerSmartTest, TabAfterUnfinishedReadingWithoutCompletions) {
+  // ㄋㄧ, and no word starts with "su": no beep, the keys become English.
+  type("su");
+  EXPECT_EQ(composingBuffer(), "ㄋㄧ");
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(errors_, 0);
+  EXPECT_EQ(composingBuffer(), "su");
+  EXPECT_TRUE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, NoEnglishCompletionWhenSwitchingIsOff) {
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  type("hel");
+  EXPECT_EQ(composingBuffer(), "ㄏㄧㄥ");
+  pressHandled(Key::asciiKey(Key::TAB));
+  EXPECT_EQ(composingBuffer(), "ㄏㄧㄥ");
+  EXPECT_TRUE(candidateValues().empty());
 }
 
 }  // namespace McBopomofo

@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -101,6 +102,17 @@ TEST(EnglishLexiconTest, SystemWordList) {
   EXPECT_GT(lex->size(), 50000u);
   EXPECT_TRUE(lex->contains("hello"));
   EXPECT_TRUE(lex->hasLongerWordWithPrefix("helpf"));
+
+  // Completions are looked up when Tab is pressed, so they must be quick even
+  // for a short prefix with many words.
+  start = std::chrono::steady_clock::now();
+  auto words = lex->wordsWithPrefix("co", 40);
+  auto us = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - start)
+                .count();
+  std::cout << "[ word list ] completions of \"co\" in " << us << " us\n";
+  EXPECT_EQ(words.size(), 40u);
+  EXPECT_LT(us, 50000);
 }
 
 TEST_F(EnglishWordsTest, PreferredCaseBuiltinAndLearned) {
@@ -404,6 +416,85 @@ TEST_F(EnglishWordsTest, OwnFileLineParsing) {
   EXPECT_FALSE(store->isWord("charlie"));
   EXPECT_TRUE(store->isWord("delta"));
   EXPECT_FALSE(store->isWord("echo"));
+}
+
+TEST(EnglishLexiconTest, WordsWithPrefixShorterFirstThenAlphabetical) {
+  auto lex = EnglishLexicon::fromWords(
+      {"ass", "assume", "associate", "associated", "associates", "assumption",
+       "assay", "bass", "as"});
+  EXPECT_EQ(lex->wordsWithPrefix("ass", 40),
+            (std::vector<std::string>{"assay", "assume", "associate",
+                                      "associated", "associates",
+                                      "assumption"}));
+  EXPECT_EQ(lex->wordsWithPrefix("ass", 2),
+            (std::vector<std::string>{"assay", "assume"}));
+  EXPECT_TRUE(lex->wordsWithPrefix("assumption", 40).empty());
+  EXPECT_TRUE(lex->wordsWithPrefix("zz", 40).empty());
+  EXPECT_TRUE(lex->wordsWithPrefix("ass", 0).empty());
+}
+
+TEST_F(EnglishWordsTest, CompletionsFromWordList) {
+  auto store = makeStore({"ass", "assume", "associate", "associated",
+                          "associates", "assumption", "bass"});
+  auto completions = store->completions("ass");
+  ASSERT_GE(completions.size(), 2u);
+  EXPECT_EQ(completions[0], "assume");
+  EXPECT_EQ(completions[1], "associate");
+  // The word itself is not a completion.
+  EXPECT_EQ(std::count(completions.begin(), completions.end(), "ass"), 0);
+  // Fewer than two letters have no completions.
+  EXPECT_TRUE(store->completions("a").empty());
+  EXPECT_TRUE(store->completions("").empty());
+}
+
+TEST_F(EnglishWordsTest, CompletionsCapitalizedLikeTheWord) {
+  auto store = makeStore({"hello", "help"});
+  EXPECT_EQ(store->completions("Hel"),
+            (std::vector<std::string>{"Help", "Hello"}));
+}
+
+TEST_F(EnglishWordsTest, CompletionsSkipLettersOnlyForTypedWords) {
+  auto store = makeStore({"associated", "aocdx"});
+  store->setLearningFolder(learning_);
+  // Not typed yet: the word list has no "aocd" prefix of associated.
+  EXPECT_EQ(store->completions("aocd"), (std::vector<std::string>{"aocdx"}));
+  store->record({"associated"});
+  store->record({"associated"});
+  auto completions = store->completions("aocd");
+  ASSERT_FALSE(completions.empty());
+  EXPECT_EQ(completions[0], "associated");
+  // The first letter must match.
+  EXPECT_TRUE(store->completions("ocd").empty());
+}
+
+TEST_F(EnglishWordsTest, CompletionsOrderTypedTwiceDictionaryTypedOnce) {
+  auto store = makeStore({"chat", "chatter", "chatroom"});
+  store->setLearningFolder(learning_);
+  store->record({"ChatGPT", "ChatGPT", "chatbotx"});
+  EXPECT_EQ(store->completions("chat"),
+            (std::vector<std::string>{"ChatGPT", "chatter", "chatroom",
+                                      "chatbotx"}));
+  // The most typed first.
+  store->record({"chatlogs", "chatlogs", "chatlogs"});
+  EXPECT_EQ(store->completions("chat")[0], "chatlogs");
+}
+
+TEST_F(EnglishWordsTest, CompletionsAtMostTwenty) {
+  std::vector<std::string> words;
+  for (char c = 'a'; c <= 'z'; c++) {
+    words.push_back(std::string("ab") + c);
+  }
+  auto store = makeStore(words);
+  EXPECT_EQ(store->completions("ab").size(), 20u);
+}
+
+TEST_F(EnglishWordsTest, CompletionsLeaveOutRemovedWords) {
+  auto store = makeStore();
+  writeFile(english_ / "AAAA0002-laptop.txt", "chatlogs\t5\nchatroom\t5\n");
+  writeFile(learning_ / "removed.txt", "english\tchatroom\t1700000000\n");
+  store->setLearningFolder(learning_);
+  EXPECT_EQ(store->completions("chat"),
+            (std::vector<std::string>{"chatlogs"}));
 }
 
 }  // namespace McBopomofo::SmartLearning

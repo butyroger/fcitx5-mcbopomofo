@@ -31,6 +31,21 @@ bool IsLetterReading(const std::string& reading);
 std::string TrailingLetters(const std::vector<std::string>& readings,
                             size_t cursor);
 
+// Replacing the letters right before the cursor with one English word reading,
+// whose candidates are the word and its completions.
+struct EnglishCompletionPlan {
+  // The letter readings to delete going backwards from the cursor.
+  size_t lettersToDelete;
+  // "_english_" followed by the letters.
+  std::string englishReading;
+};
+
+// The plan for listing the completions of the letters before |cursor|, or
+// nothing if there are fewer than two letters. Whether there are any
+// completions is checked by the caller.
+std::optional<EnglishCompletionPlan> PlanEnglishCompletion(
+    const std::vector<std::string>& readings, size_t cursor);
+
 // Whether a space is needed at |cursor|: after Chinese when English follows
 // (|beforeEnglish|), or after English when Chinese follows. The preference and
 // the input mode are checked by the caller.

@@ -423,6 +423,10 @@ class KeyHandler {
   void switchToSmartEnglish(const std::string& text);
   // Fixes the case of the English word before the cursor, like "iPhone".
   void fixCaseOfEnglishWordBeforeCursor();
+  // Replaces the letters before the cursor with one English word reading and
+  // lists its completions. Returns false, changing nothing, if there are
+  // fewer than two letters or no completions.
+  bool enterEnglishCompletion(const StateCallback& stateCallback);
   // Turns the last letters before the cursor into Chinese when the key ends
   // a syllable typed right after an English word.
   bool convertTrailingEnglishToChinese(char key,

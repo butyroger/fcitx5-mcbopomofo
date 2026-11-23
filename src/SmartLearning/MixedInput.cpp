@@ -75,6 +75,16 @@ std::string TrailingLetters(const std::vector<std::string>& readings,
   return run;
 }
 
+std::optional<EnglishCompletionPlan> PlanEnglishCompletion(
+    const std::vector<std::string>& readings, size_t cursor) {
+  std::string letters = TrailingLetters(readings, cursor);
+  if (letters.size() < 2) {
+    return std::nullopt;
+  }
+  size_t count = letters.size();
+  return EnglishCompletionPlan{count, kEnglishPrefix + letters};
+}
+
 bool AutoSpaceNeeded(const std::vector<std::string>& readings, size_t cursor,
                      bool beforeEnglish) {
   if (cursor == 0 || cursor > readings.size()) {
