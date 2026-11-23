@@ -106,6 +106,19 @@ bool isSubsequence(std::string_view letters, std::string_view word) {
   return true;
 }
 
+// Whether a word of the word list is likely an abbreviation: it has no vowel
+// letter (a e i o u y), such as blvd, or none after its first letter and more
+// than three letters, such as assn and asst. Short words such as and, ask and
+// end are kept.
+bool isLikelyAbbreviation(std::string_view word) {
+  constexpr std::string_view kVowels = "aeiouy";
+  if (word.find_first_of(kVowels) == std::string_view::npos) {
+    return true;
+  }
+  return word.size() > 3 &&
+         word.find_first_of(kVowels, 1) == std::string_view::npos;
+}
+
 // The words of the word list looked at for completions, before the words
 // already offered and those over the maximum are left out.
 constexpr size_t kDictionaryCompletions = 40;
@@ -467,8 +480,14 @@ std::vector<std::string> EnglishWordStore::completions(
       results.push_back(entry->first);
     }
   }
-  for (auto& dictionaryWord :
-       lexicon_->wordsWithPrefix(lowercased, kDictionaryCompletions)) {
+  // Abbreviations in the word list, such as assn and asst, come after its
+  // other words.
+  auto dictionaryWords =
+      lexicon_->wordsWithPrefix(lowercased, kDictionaryCompletions);
+  std::stable_partition(
+      dictionaryWords.begin(), dictionaryWords.end(),
+      [](const std::string& w) { return !isLikelyAbbreviation(w); });
+  for (auto& dictionaryWord : dictionaryWords) {
     results.push_back(std::move(dictionaryWord));
   }
   // A word typed once may be a typo, so it comes after the word list.
@@ -484,6 +503,11 @@ std::vector<std::string> EnglishWordStore::completions(
   for (auto& candidate : results) {
     // Only single words, which the composing buffer can hold.
     if (candidate.empty() || !allAsciiLetters(candidate)) {
+      continue;
+    }
+    // The word itself in any case, such as ASS typed for "ass", is not a
+    // completion of it.
+    if (asciiLowercased(candidate) == lowercased) {
       continue;
     }
     if (capitalized && candidate == asciiLowercased(candidate)) {

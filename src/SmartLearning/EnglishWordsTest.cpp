@@ -497,4 +497,36 @@ TEST_F(EnglishWordsTest, CompletionsLeaveOutRemovedWords) {
             (std::vector<std::string>{"chatlogs"}));
 }
 
+TEST_F(EnglishWordsTest, CompletionsLeaveOutTheWordItselfInAnyCase) {
+  auto store = makeStore({"ass", "assay", "asset"});
+  store->setLearningFolder(learning_);
+  store->record({"Ass", "Ass", "ASS", "ASS", "aSs"});
+  auto completions = store->completions("ass");
+  EXPECT_EQ(completions, (std::vector<std::string>{"assay", "asset"}));
+  EXPECT_EQ(store->completions("ASS"),
+            (std::vector<std::string>{"Assay", "Asset"}));
+}
+
+TEST_F(EnglishWordsTest, CompletionsPutWordsWithoutVowelsLast) {
+  auto store =
+      makeStore({"ass", "assn", "asst", "assay", "asset", "associate"});
+  EXPECT_EQ(store->completions("ass"),
+            (std::vector<std::string>{"assay", "asset", "associate", "assn",
+                                      "asst"}));
+  // No vowel at all, and y counts as a vowel.
+  auto noVowel = makeStore({"bl", "blvd", "bly", "blew", "blvds"});
+  EXPECT_EQ(noVowel->completions("bl"),
+            (std::vector<std::string>{"bly", "blew", "blvd", "blvds"}));
+  // Short words with only a first vowel, such as and, are not abbreviations.
+  auto shortWords = makeStore({"and", "ands", "anew", "ant"});
+  EXPECT_EQ(shortWords->completions("an"),
+            (std::vector<std::string>{"and", "ant", "anew", "ands"}));
+  // Words typed twice still come first and words typed once last.
+  store->setLearningFolder(learning_);
+  store->record({"assvm", "assvm", "asstx"});
+  EXPECT_EQ(store->completions("ass"),
+            (std::vector<std::string>{"assvm", "assay", "asset", "associate",
+                                      "assn", "asst", "asstx"}));
+}
+
 }  // namespace McBopomofo::SmartLearning

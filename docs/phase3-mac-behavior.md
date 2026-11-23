@@ -373,7 +373,7 @@ Provider 在 `KH:205-214` 注入（只注入一次，給 `McBopomofo` 模式的 
 macOS 拼字檢查器沒有 Linux 對應。fcitx 已有 `EnglishLexicon`（排序、去重、小寫的字表，`fSL/EnglishWords.h:18-43`）與 `EnglishWordStore`（`counts_`、`localCounts_`）。提案：
 
 1. 在 `EnglishWordStore` 新增 `std::vector<std::string> completions(const std::string& word)`，第 1-5、7、8 步完全照 Mac。
-2. 第 6 步的「completions」換成 `EnglishLexicon::wordsWithPrefix(lowercased, limit)`：在 `words_` 上 `lower_bound` 取前綴範圍，排除等於 `lowercased` 本身者。字表沒有詞頻，Mac 的順序（`UG:203` 範例 `ass` → assuming、assume、assistant、associate）看起來不是字母序，所以 Linux 順序必然不同；建議「長度遞增，同長度依字母序」，上限 40 個再交給第 8 步截成 20。這是 Linux 差異，要寫進說明。
+2. 第 6 步的「completions」換成 `EnglishLexicon::wordsWithPrefix(lowercased, limit)`：在 `words_` 上 `lower_bound` 取前綴範圍，排除等於 `lowercased` 本身者。字表沒有詞頻，Mac 的順序（`UG:203` 範例 `ass` → assuming、assume、assistant、associate）看起來不是字母序，所以 Linux 順序必然不同；建議「長度遞增，同長度依字母序」，上限 40 個再交給第 8 步截成 20。這是 Linux 差異，要寫進說明。（實機驗收後補充：這 40 個裡沒有母音字母 a e i o u y 的字（如 blvd），以及超過三個字母、除首字母外沒有母音的字（如 assn、asst）多半是縮寫，排到字表補完的最後；and、ask 這類短字不算；第 8 步也不分大小寫排除與輸入相同的字。）
 3. 第 6 步的「guesses」：Linux 不做，或以字表做「首字母相同且子序列」的搜尋（長度遞增）。建議先不做，避免大字表全掃的成本。
 4. 第 4 步排序的字串比較：Swift 的 `String <` 對 ASCII 等同 byte 序，`std::string` 可直接比。
 5. engine 在建立 LM 後呼叫 `lm->setEnglishCompletionProvider([store](const std::string& w){ return store->completions(w); })`。注意 provider 會在 `getUnigrams("_english_...")` 時被呼叫，包含 grid walk 期間；`completions` 內的 `loadIfNeeded` 可能讀檔，應保持輕量（60 秒快取已具備）。
