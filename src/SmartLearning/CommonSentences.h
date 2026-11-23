@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "AtomicFile.h"
 #include "RemovedEntries.h"
 
 namespace McBopomofo::SmartLearning {
@@ -124,9 +125,7 @@ class CommonSentenceStore {
 
  private:
   // The modification time and size of each other device's file, by name.
-  using Snapshot =
-      std::map<std::string,
-               std::pair<std::filesystem::file_time_type, std::uintmax_t>>;
+  using Snapshot = std::map<std::string, FileStamp>;
 
   // Returns true if the own file was loaded (or found absent) by this call.
   bool loadLocalFileIfNeeded();

@@ -7,13 +7,12 @@
 
 #include <algorithm>
 #include <cctype>
-#include <charconv>
-#include <chrono>
 #include <cstdint>
 #include <system_error>
 #include <utility>
 
 #include "AtomicFile.h"
+#include "LearningFileUtils.h"
 #include "LearningPaths.h"
 
 namespace McBopomofo::SmartLearning {
@@ -155,58 +154,6 @@ std::string_view trimSpaces(std::string_view s) {
   return s.substr(0, end);
 }
 
-std::vector<std::string_view> split(std::string_view s, char separator,
-                                    bool keepEmpty) {
-  std::vector<std::string_view> parts;
-  size_t start = 0;
-  while (true) {
-    size_t end = s.find(separator, start);
-    std::string_view part = s.substr(
-        start, end == std::string_view::npos ? std::string_view::npos
-                                             : end - start);
-    if (keepEmpty || !part.empty()) {
-      parts.push_back(part);
-    }
-    if (end == std::string_view::npos) {
-      break;
-    }
-    start = end + 1;
-  }
-  return parts;
-}
-
-// An integer with an optional sign, and nothing else.
-std::optional<long long> parseInteger(std::string_view s) {
-  if (!s.empty() && s.front() == '+') {
-    s.remove_prefix(1);
-    if (!s.empty() && s.front() == '-') {
-      return std::nullopt;
-    }
-  }
-  long long value = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
-  if (s.empty() || ec != std::errc() || ptr != s.data() + s.size()) {
-    return std::nullopt;
-  }
-  return value;
-}
-
-// A decimal number with an optional sign, and nothing else.
-std::optional<double> parseNumber(std::string_view s) {
-  if (!s.empty() && s.front() == '+') {
-    s.remove_prefix(1);
-    if (!s.empty() && s.front() == '-') {
-      return std::nullopt;
-    }
-  }
-  double value = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
-  if (s.empty() || ec != std::errc() || ptr != s.data() + s.size()) {
-    return std::nullopt;
-  }
-  return value;
-}
-
 // Each line is the sentence, the count, the time last used, and 1 if it has
 // been added by the user.
 std::map<std::string, CommonSentenceStore::Entry> parseEntries(
@@ -234,20 +181,6 @@ void combine(CommonSentenceStore::Entry* into,
   into->count += entry.count;
   into->lastUsed = std::max(into->lastUsed, entry.lastUsed);
   into->pinned = into->pinned || entry.pinned;
-}
-
-fs::path normalizedFolder(const fs::path& path) {
-  fs::path normal = path.lexically_normal();
-  if (normal.filename().empty() && normal.has_parent_path()) {
-    normal = normal.parent_path();
-  }
-  return normal;
-}
-
-double steadySeconds() {
-  return std::chrono::duration<double>(
-             std::chrono::steady_clock::now().time_since_epoch())
-      .count();
 }
 
 }  // namespace
@@ -449,21 +382,10 @@ void CommonSentenceStore::reloadIfNeeded() {
 }
 
 CommonSentenceStore::Snapshot CommonSentenceStore::takeSnapshot() const {
-  Snapshot snapshot;
   if (!hasFolder_) {
-    return snapshot;
+    return {};
   }
-  for (const auto& path :
-       otherDevicesLearningFiles(sentencesFolder(), ownFilename_)) {
-    std::error_code mtimeEc;
-    std::error_code sizeEc;
-    auto mtime = fs::last_write_time(path, mtimeEc);
-    auto size = fs::file_size(path, sizeEc);
-    if (!mtimeEc && !sizeEc) {
-      snapshot[path.filename().string()] = {mtime, size};
-    }
-  }
-  return snapshot;
+  return stampsOf(otherDevicesLearningFiles(sentencesFolder(), ownFilename_));
 }
 
 bool CommonSentenceStore::save() {

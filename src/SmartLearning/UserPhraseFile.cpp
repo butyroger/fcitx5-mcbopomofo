@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "AtomicFile.h"
+#include "LearningFileUtils.h"
 
 namespace McBopomofo::SmartLearning::UserPhraseFile {
 namespace fs = std::filesystem;
@@ -104,7 +105,7 @@ std::optional<std::pair<std::string_view, std::string_view>> phraseOfLine(
 }
 
 // Split on '\n', keeping the empty part after a final line break.
-std::vector<std::string_view> splitLines(std::string_view content) {
+std::vector<std::string_view> splitAtNewlines(std::string_view content) {
   std::vector<std::string_view> lines;
   size_t start = 0;
   while (true) {
@@ -129,13 +130,9 @@ std::string joinLines(const std::vector<std::string_view>& lines) {
   return result;
 }
 
-bool isPlainPart(const std::string& s) {
-  return !s.empty() && s.find_first_of(" \t\r\n") == std::string::npos;
-}
-
 bool holdsPhrase(std::string_view content, std::string_view value,
                  std::string_view reading) {
-  for (std::string_view line : splitLines(content)) {
+  for (std::string_view line : splitAtNewlines(content)) {
     auto phrase = phraseOfLine(line);
     if (phrase && phrase->first == value && phrase->second == reading) {
       return true;
@@ -150,7 +147,7 @@ std::optional<std::string> withoutPhrase(std::string_view content,
                                          std::string_view reading) {
   std::vector<std::string_view> kept;
   bool removed = false;
-  for (std::string_view line : splitLines(content)) {
+  for (std::string_view line : splitAtNewlines(content)) {
     auto phrase = phraseOfLine(line);
     if (phrase && phrase->first == value && phrase->second == reading) {
       removed = true;
@@ -202,7 +199,7 @@ void removePhraseFromFile(const fs::path& path, const std::string& value,
 std::optional<std::string> learnedContent(std::string content,
                                           const std::string& value,
                                           const std::string& reading) {
-  std::vector<std::string_view> lines = splitLines(content);
+  std::vector<std::string_view> lines = splitAtNewlines(content);
   std::optional<size_t> firstOfReading;
   std::vector<bool> isThePhrase(lines.size(), false);
   for (size_t i = 0; i < lines.size(); ++i) {

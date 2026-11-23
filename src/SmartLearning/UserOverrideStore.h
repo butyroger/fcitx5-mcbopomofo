@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "AtomicFile.h"
 #include "UserOverrideModel.h"
 #include "gramambular2/reading_grid.h"
 
@@ -61,13 +62,6 @@ class UserOverrideStore {
   [[nodiscard]] bool isLocalFilePending() const;
 
  private:
-  struct FileStamp {
-    std::filesystem::file_time_type mtime;
-    std::uintmax_t size = 0;
-    bool operator==(const FileStamp& other) const {
-      return mtime == other.mtime && size == other.size;
-    }
-  };
   struct Snapshot {
     bool folderExists = false;
     std::map<std::string, FileStamp> files;

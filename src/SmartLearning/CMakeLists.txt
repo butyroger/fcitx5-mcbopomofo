@@ -19,6 +19,8 @@ add_library(SmartLearningLib
         EnglishWords.cpp
         LearnPhrase.h
         LearnPhrase.cpp
+        LearningFileUtils.h
+        LearningFileUtils.cpp
         LearningPaths.h
         LearningPaths.cpp
         MixedInput.h

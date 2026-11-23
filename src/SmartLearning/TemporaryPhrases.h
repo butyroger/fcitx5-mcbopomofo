@@ -1,7 +1,6 @@
 #ifndef SRC_SMARTLEARNING_TEMPORARYPHRASES_H_
 #define SRC_SMARTLEARNING_TEMPORARYPHRASES_H_
 
-#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <map>
@@ -11,6 +10,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "AtomicFile.h"
 #include "RemovedEntries.h"
 
 namespace McBopomofo::SmartLearning {
@@ -84,13 +84,6 @@ class TemporaryPhraseStore {
   [[nodiscard]] bool isLocalFilePending() const { return localFilePending_; }
 
  private:
-  struct FileStamp {
-    std::filesystem::file_time_type mtime;
-    std::uintmax_t size = 0;
-    bool operator==(const FileStamp& other) const {
-      return mtime == other.mtime && size == other.size;
-    }
-  };
   // The files of the temporary folder and removed.txt, by name.
   using Snapshot = std::map<std::string, FileStamp>;
 

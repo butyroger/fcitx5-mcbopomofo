@@ -1,13 +1,13 @@
 #include "EnglishWords.h"
 
 #include <algorithm>
-#include <charconv>
 #include <set>
 #include <system_error>
 #include <unordered_map>
 #include <utility>
 
 #include "AtomicFile.h"
+#include "LearningFileUtils.h"
 #include "LearningPaths.h"
 
 namespace McBopomofo::SmartLearning {
@@ -123,43 +123,6 @@ bool isLikelyAbbreviation(std::string_view word) {
 // already offered and those over the maximum are left out.
 constexpr size_t kDictionaryCompletions = 40;
 
-// Splits on |separator|. Empty parts are dropped unless |keepEmpty|.
-std::vector<std::string_view> split(std::string_view s, char separator,
-                                    bool keepEmpty) {
-  std::vector<std::string_view> parts;
-  size_t start = 0;
-  while (true) {
-    size_t end = s.find(separator, start);
-    std::string_view part = s.substr(
-        start, end == std::string_view::npos ? std::string_view::npos
-                                             : end - start);
-    if (keepEmpty || !part.empty()) {
-      parts.push_back(part);
-    }
-    if (end == std::string_view::npos) {
-      break;
-    }
-    start = end + 1;
-  }
-  return parts;
-}
-
-// An optional sign and decimal digits, with nothing else.
-std::optional<long long> parseInteger(std::string_view s) {
-  if (!s.empty() && s.front() == '+') {
-    s.remove_prefix(1);
-    if (!s.empty() && s.front() == '-') {
-      return std::nullopt;
-    }
-  }
-  long long value = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
-  if (s.empty() || ec != std::errc() || ptr != s.data() + s.size()) {
-    return std::nullopt;
-  }
-  return value;
-}
-
 // Each line of a file is a word, a tab, and the count.
 std::map<std::string, long long> parseCounts(std::string_view content) {
   std::map<std::string, long long> result;
@@ -173,15 +136,6 @@ std::map<std::string, long long> parseCounts(std::string_view content) {
     }
   }
   return result;
-}
-
-// "a/./b/" and "a/b" are the same folder.
-fs::path normalizedFolder(const fs::path& path) {
-  fs::path normal = path.lexically_normal();
-  if (normal.filename().empty() && normal.has_parent_path()) {
-    normal = normal.parent_path();
-  }
-  return normal;
 }
 
 std::shared_ptr<EnglishLexicon> emptyLexicon() {

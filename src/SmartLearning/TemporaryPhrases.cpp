@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <charconv>
-#include <chrono>
 #include <cstdio>
 #include <optional>
 #include <string_view>
@@ -10,6 +9,7 @@
 #include <utility>
 
 #include "AtomicFile.h"
+#include "LearningFileUtils.h"
 #include "LearningPaths.h"
 
 namespace McBopomofo::SmartLearning {
@@ -64,37 +64,8 @@ std::map<std::string, double> parsePhrases(std::string_view content,
   return result;
 }
 
-bool isPlainPart(const std::string& s) {
-  return !s.empty() && s.find_first_of(" \t\r\n") == std::string::npos;
-}
-
 std::string phraseKey(const std::string& value, const std::string& reading) {
   return value + " " + reading;
-}
-
-// "a/./b/" and "a/b" are the same folder.
-fs::path normalizedFolder(const fs::path& path) {
-  fs::path normal = path.lexically_normal();
-  if (normal.filename().empty() && normal.has_parent_path()) {
-    normal = normal.parent_path();
-  }
-  return normal;
-}
-
-// The modification time and size of a file.
-bool readStamp(const fs::path& path, fs::file_time_type* mtime,
-               std::uintmax_t* size) {
-  std::error_code mtimeEc;
-  std::error_code sizeEc;
-  *mtime = fs::last_write_time(path, mtimeEc);
-  *size = fs::file_size(path, sizeEc);
-  return !mtimeEc && !sizeEc;
-}
-
-double steadySeconds() {
-  return std::chrono::duration<double>(
-             std::chrono::steady_clock::now().time_since_epoch())
-      .count();
 }
 
 }  // namespace
@@ -363,40 +334,18 @@ bool TemporaryPhraseStore::isRemoved(const std::string& phrase, double time) {
 }
 
 TemporaryPhraseStore::Snapshot TemporaryPhraseStore::takeSnapshot() const {
-  Snapshot snapshot;
-  std::error_code ec;
-  const fs::path removed = learningFolder_ / kRemovedFilename;
-  if (fs::is_regular_file(removed, ec)) {
-    FileStamp stamp;
-    if (readStamp(removed, &stamp.mtime, &stamp.size)) {
-      snapshot[kRemovedSnapshotKey] = stamp;
-    }
-  }
-  fs::directory_iterator it(temporaryFolder(), ec);
-  if (ec) {
-    return snapshot;
-  }
-  for (const fs::directory_iterator end; it != end; it.increment(ec)) {
-    if (ec) {
-      break;
-    }
-    const auto& entry = *it;
-    std::error_code entryEc;
-    if (entry.path().extension() != ".txt" || !entry.is_regular_file(entryEc)) {
-      continue;
-    }
-    FileStamp stamp;
-    if (readStamp(entry.path(), &stamp.mtime, &stamp.size)) {
-      snapshot[entry.path().filename().string()] = stamp;
-    }
+  Snapshot snapshot = txtFileStamps(temporaryFolder());
+  FileStamp removed = stampOf(learningFolder_ / kRemovedFilename);
+  if (removed.exists) {
+    snapshot[kRemovedSnapshotKey] = removed;
   }
   return snapshot;
 }
 
 void TemporaryPhraseStore::recordOwnFileInSnapshot() {
   // The own write is not a change made by another device.
-  FileStamp stamp;
-  if (readStamp(ownFilePath(), &stamp.mtime, &stamp.size)) {
+  FileStamp stamp = stampOf(ownFilePath());
+  if (stamp.exists) {
     snapshot_[ownFilename_] = stamp;
   }
 }

@@ -1,11 +1,11 @@
 #include "RemovedEntries.h"
 
-#include <charconv>
 #include <optional>
 #include <system_error>
 #include <utility>
 
 #include "AtomicFile.h"
+#include "LearningFileUtils.h"
 
 namespace McBopomofo::SmartLearning {
 namespace fs = std::filesystem;
@@ -13,22 +13,6 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr char kRemovedFilename[] = "removed.txt";
-
-// A decimal number with an optional sign, and nothing else.
-std::optional<double> parseNumber(std::string_view s) {
-  if (!s.empty() && s.front() == '+') {
-    s.remove_prefix(1);
-    if (!s.empty() && s.front() == '-') {
-      return std::nullopt;
-    }
-  }
-  double value = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
-  if (s.empty() || ec != std::errc() || ptr != s.data() + s.size()) {
-    return std::nullopt;
-  }
-  return value;
-}
 
 std::string entryKey(std::string_view kind, std::string_view key) {
   std::string result(kind);
@@ -47,7 +31,7 @@ void RemovedEntries::setLearningFolder(fs::path learningFolder) {
   if (learningFolder.empty() || !learningFolder.is_absolute()) {
     return;
   }
-  if (learningFolder.lexically_normal() != learningFolder_.lexically_normal()) {
+  if (normalizedFolder(learningFolder) != normalizedFolder(learningFolder_)) {
     learningFolder_ = std::move(learningFolder);
     loaded_ = false;
   }

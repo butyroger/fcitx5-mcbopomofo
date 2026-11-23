@@ -4,25 +4,11 @@
 #include <system_error>
 
 #include "AtomicFile.h"
+#include "LearningFileUtils.h"
 #include "LearningPaths.h"
 
 namespace McBopomofo::SmartLearning {
 namespace fs = std::filesystem;
-
-namespace {
-
-bool hasTxtExtension(const fs::path& path) { return path.extension() == ".txt"; }
-
-// "a/./b/" and "a/b" are the same folder.
-fs::path normalizedFolder(const fs::path& path) {
-  fs::path normal = path.lexically_normal();
-  if (normal.filename().empty() && normal.has_parent_path()) {
-    normal = normal.parent_path();
-  }
-  return normal;
-}
-
-}  // namespace
 
 UserOverrideStore::UserOverrideStore(std::string deviceID,
                                      std::string deviceName)
@@ -119,12 +105,8 @@ bool UserOverrideStore::save() {
   // Record the own write so that it is not taken for a change made by
   // another device.
   snapshot_.folderExists = true;
-  std::error_code mtimeEc;
-  std::error_code sizeEc;
-  FileStamp stamp;
-  stamp.mtime = fs::last_write_time(path, mtimeEc);
-  stamp.size = fs::file_size(path, sizeEc);
-  if (!mtimeEc && !sizeEc) {
+  FileStamp stamp = stampOf(path);
+  if (stamp.exists) {
     snapshot_.files[ownFilename_] = stamp;
   }
   return true;
@@ -197,24 +179,7 @@ UserOverrideStore::Snapshot UserOverrideStore::takeSnapshot() const {
   if (!snapshot.folderExists) {
     return snapshot;
   }
-  fs::directory_iterator it(folder_, ec);
-  if (ec) {
-    return snapshot;
-  }
-  for (const fs::directory_iterator end; it != end; it.increment(ec)) {
-    if (ec) {
-      break;
-    }
-    const auto& entry = *it;
-    std::error_code entryEc;
-    if (!hasTxtExtension(entry.path()) || !entry.is_regular_file(entryEc)) {
-      continue;
-    }
-    FileStamp stamp;
-    stamp.mtime = entry.last_write_time(entryEc);
-    stamp.size = entry.file_size(entryEc);
-    snapshot.files[entry.path().filename().string()] = stamp;
-  }
+  snapshot.files = txtFileStamps(folder_);
   return snapshot;
 }
 
