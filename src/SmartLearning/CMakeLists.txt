@@ -27,8 +27,12 @@ add_library(SmartLearningLib
         QuickNumbers.cpp
         RemovedEntries.h
         RemovedEntries.cpp
+        SymbolTable.h
+        SymbolTable.cpp
         TemporaryPhrases.h
         TemporaryPhrases.cpp
+        TextTemplates.h
+        TextTemplates.cpp
         UserOverrideStore.h
         UserDataFolder.h
         UserDataFolder.cpp
@@ -56,7 +60,9 @@ if (ENABLE_TEST)
                 MixedInputTest.cpp
                 QuickNumbersTest.cpp
                 RemovedEntriesTest.cpp
+                SymbolTableTest.cpp
                 TemporaryPhrasesTest.cpp
+                TextTemplatesTest.cpp
                 UserDataFolderTest.cpp
                 UserOverrideStoreTest.cpp
                 UserPhraseFileTest.cpp)

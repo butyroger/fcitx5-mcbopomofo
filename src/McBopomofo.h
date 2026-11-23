@@ -46,7 +46,9 @@
 #include "LanguageModelLoader.h"
 #include "CommonSentences.h"
 #include "RemovedEntries.h"
+#include "SymbolTable.h"
 #include "TemporaryPhrases.h"
+#include "TextTemplates.h"
 #include "UserOverrideStore.h"
 #include "PathCompat.h"
 
@@ -372,6 +374,21 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
       const McBopomofo::KeyHandler::StateCallback& stateCallback,
       const McBopomofo::KeyHandler::ErrorCallback& errorCallback);
 
+  // The keys in the symbol table, which is a grid where a symbol is picked
+  // with two keys: one for the row, and one for the symbol in the row.
+  bool handleSymbolTableKeyEvent(
+      fcitx::InputContext* context, fcitx::Key key, fcitx::Key origKey,
+      const McBopomofo::KeyHandler::StateCallback& stateCallback,
+      const McBopomofo::KeyHandler::ErrorCallback& errorCallback);
+  // Shows the symbol table: the rows labeled with the keys, or the symbols
+  // of the row picked.
+  void showSymbolTable(fcitx::InputContext* context);
+  // The selection key pressed with Shift, or -1, such as Shift+3 or Shift+D.
+  int shiftedSelectionKeyIndex(const fcitx::Key& key,
+                               const fcitx::Key& origKey) const;
+  // The selection keys as characters, such as "123456789".
+  std::string selectionKeyCharacters() const;
+
   // Leaves a menu opened from the candidate list: shows |choosing| again with
   // the candidate at |selectedIndex| highlighted.
   void returnToCandidateList(
@@ -421,6 +438,11 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   // Gives the temporary phrases to the language model; none in Plain
   // Bopomofo.
   void applyTemporaryPhrases();
+  // Points the text templates and the symbol table at the user data folder.
+  void applyTextFiles();
+  // Gives the symbol table to the language model, reading the file again if
+  // it changed; none in Plain Bopomofo, which lists the punctuation instead.
+  void applySymbolTable();
   // Writes the phrases to data.txt at once, reloads the user phrases and
   // tells the user. Returns the phrases learned.
   std::vector<SmartLearning::Phrase> learnUserPhrases(
@@ -460,6 +482,11 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   std::shared_ptr<SmartLearning::RemovedEntries> removedEntries_;
   std::shared_ptr<SmartLearning::TemporaryPhraseStore> temporaryPhraseStore_;
   std::shared_ptr<SmartLearning::CommonSentenceStore> commonSentenceStore_;
+  std::shared_ptr<SmartLearning::TextTemplateStore> textTemplateStore_;
+  SmartLearning::SymbolTableFile symbolTableFile_;
+  std::vector<SmartLearning::SymbolCategory> symbolTable_;
+  // The grid of the symbol table being shown.
+  std::unique_ptr<SmartLearning::SymbolGrid> symbolGrid_;
   std::unique_ptr<fcitx::EventSourceTime> learningSaveTimer_;
   bool learningSaveRetried_ = false;
   // A choice has been learned since the learned choices were last saved.

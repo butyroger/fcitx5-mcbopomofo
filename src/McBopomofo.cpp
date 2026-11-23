@@ -34,6 +34,7 @@
 
 #include <unistd.h>
 
+#include <algorithm>
 #include <chrono>
 #include <ctime>
 #include <filesystem>
@@ -49,6 +50,8 @@
 #include "Key.h"
 #include "LearningPaths.h"
 #include "MixedInput.h"
+#include "SymbolTable.h"
+#include "TextTemplates.h"
 #include "UserDataFolder.h"
 #include "UserPhraseFile.h"
 #include "Log.h"
@@ -355,6 +358,21 @@ class McBopomofoTextOnlyCandidateWord : public fcitx::CandidateWord {
   void select(fcitx::InputContext* /*unused*/) const override {}
 };
 
+// A row of the symbol table; picking it lists its symbols.
+class McBopomofoSymbolRowWord : public fcitx::CandidateWord {
+ public:
+  McBopomofoSymbolRowWord(fcitx::Text displayText,
+                          std::function<void(fcitx::InputContext*)> onSelect)
+      : fcitx::CandidateWord(std::move(displayText)),
+        onSelect_(std::move(onSelect)) {}
+  void select(fcitx::InputContext* context) const override {
+    onSelect_(context);
+  }
+
+ private:
+  std::function<void(fcitx::InputContext*)> onSelect_;
+};
+
 class KeyHandlerLocalizedString : public KeyHandler::LocalizedStrings {
  public:
   std::string cursorIsBetweenSyllables(
@@ -412,6 +430,10 @@ class KeyHandlerLocalizedString : public KeyHandler::LocalizedStrings {
   std::string tabToCompleteSentence(const std::string& rest) override {
     return fmt::format(FmtRuntime(_("Tab: {0}")), rest);
   }
+
+  std::string textTemplatesTitle() override { return _("Text Templates"); }
+
+  std::string quickNumbersTitle() override { return _("Quick Numbers"); }
 };
 
 class LanguageModelLoaderLocalizedStrings
@@ -505,6 +527,8 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
   commonSentenceStore_ = std::make_shared<SmartLearning::CommonSentenceStore>(
       config_.deviceID.value(), hostName, wallNow, removedEntries_);
   commonSentenceStore_->setEnabled(config_.commonSentencesEnabled.value());
+  textTemplateStore_ =
+      std::make_shared<SmartLearning::TextTemplateStore>(steadyNow);
   // The completions listed with Tab for an English word.
   languageModelLoader_->getLM()->setEnglishCompletionProvider(
       [store = englishWordStore_](const std::string& word) {
@@ -538,6 +562,8 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
     }
   });
   keyHandler_->setCommonSentenceStore(commonSentenceStore_);
+  keyHandler_->setTextTemplateStore(textTemplateStore_);
+  keyHandler_->setTextTemplateClock([] { return std::time(nullptr); });
   keyHandler_->setOnCommonSentencesRecorded([this]() {
     if (commonSentenceStore_->hasUnsavedChanges()) {
       scheduleLearningSave();
@@ -758,6 +784,41 @@ void McBopomofoEngine::applyLearningFolder() {
   if (commonSentenceStore_) {
     commonSentenceStore_->setLearningFolder(learningFolder);
   }
+  applyTextFiles();
+}
+
+void McBopomofoEngine::applyTextFiles() {
+  if (languageModelLoader_->userDataPath().empty()) {
+    return;
+  }
+  std::filesystem::path folder(languageModelLoader_->userDataPath());
+  if (textTemplateStore_) {
+    // The sample is only written to the default folder; a folder chosen by
+    // the user may be synced from other computers.
+    textTemplateStore_->setFile(
+        folder / "text-templates.txt",
+        SmartLearning::shouldCreateTemplateFiles(
+            folder, languageModelLoader_->defaultUserDataPath())
+            ? _("# Text templates. Each line is a code, a tab, and the text. "
+                "Write \\n for a line break.\n# Press ` and type the code, "
+                "then Enter to insert the text. Press ` again for the symbol "
+                "table.\n# The following are examples. Edit or remove them "
+                "as you like.\naddr\t100 Main Street, Springfield\ntel\t+1 "
+                "555 0100\nem\tname@example.com\nsig\tBest "
+                "regards,\\nJohn Doe\n")
+            : "");
+  }
+  symbolTableFile_.setPath(folder / "symbol-table.txt");
+  applySymbolTable();
+}
+
+void McBopomofoEngine::applySymbolTable() {
+  symbolTableFile_.reloadIfChanged(&symbolTable_);
+  bool enabled =
+      keyHandler_ == nullptr ||
+      keyHandler_->inputMode() == McBopomofo::InputMode::McBopomofo;
+  languageModelLoader_->getLM()->setSymbolTable(
+      enabled ? symbolTable_ : std::vector<SmartLearning::SymbolCategory>());
 }
 
 void McBopomofoEngine::applyTemporaryPhrases() {
@@ -1080,6 +1141,9 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
   // Also drops the temporary phrases in Plain Bopomofo.
   temporaryPhraseStore_->reloadIfChanged();
   applyTemporaryPhrases();
+  // The symbol table is read again if the file changed; Plain Bopomofo has
+  // none.
+  applySymbolTable();
   // The other devices' sentences, at most once a minute.
   commonSentenceStore_->reloadIfNeeded();
 
@@ -1228,6 +1292,34 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
     }
   }
 
+  // In the text templates, the keys go to the code first. Shift and a
+  // selection key picks a template, but for an operator of a number, such as
+  // Shift+8 for "*". The other keys go to the candidates, or are swallowed
+  // if there are none.
+  if (auto* textTemplate =
+          dynamic_cast<InputStates::TextTemplate*>(state_.get())) {
+    Key mappedKey = MapFcitxKey(key, origKey);
+    bool picksCandidate =
+        shiftedSelectionKeyIndex(key, origKey) != -1 &&
+        !SmartLearning::IsNumberOperatorKey(textTemplate->code,
+                                            mappedKey.ascii);
+    if (!picksCandidate) {
+      bool hasCandidates = !textTemplate->texts.empty();
+      bool handled = keyHandler_->handleTextTemplateInput(
+          mappedKey, textTemplate,
+          [this, context](std::unique_ptr<InputState> next) {
+            handleStateOrSequence(context, std::move(next));
+          },
+          []() {
+            // TODO(unassigned): beep?
+          });
+      if (handled || !hasCandidates) {
+        keyEvent.filterAndAccept();
+        return;
+      }
+    }
+  }
+
   if (dynamic_cast<InputStates::ChoosingCandidate*>(state_.get()) != nullptr ||
       dynamic_cast<InputStates::SelectingDictionary*>(state_.get()) !=
           nullptr ||
@@ -1239,7 +1331,8 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
       dynamic_cast<InputStates::SelectingDateMacro*>(state_.get()) != nullptr ||
       dynamic_cast<InputStates::CustomMenu*>(state_.get()) != nullptr ||
       dynamic_cast<InputStates::NumberInput*>(state_.get()) != nullptr ||
-      dynamic_cast<InputStates::IcuTransformInput*>(state_.get()) != nullptr) {
+      dynamic_cast<InputStates::IcuTransformInput*>(state_.get()) != nullptr ||
+      dynamic_cast<InputStates::TextTemplate*>(state_.get()) != nullptr) {
     // Absorb all keys when the candidate panel is on.
     keyEvent.filterAndAccept();
 
@@ -1276,7 +1369,8 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
         dynamic_cast<InputStates::SelectingFeature*>(state_.get()) != nullptr ||
         dynamic_cast<InputStates::SelectingDateMacro*>(state_.get()) !=
             nullptr ||
-        dynamic_cast<InputStates::CustomMenu*>(state_.get()) != nullptr) {
+        dynamic_cast<InputStates::CustomMenu*>(state_.get()) != nullptr ||
+        dynamic_cast<InputStates::TextTemplate*>(state_.get()) != nullptr) {
       context->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
       context->updatePreedit();
     }
@@ -1334,6 +1428,13 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
       dynamic_cast<InputStates::IcuTransformInput*>(state_.get());
   InputStates::ChoosingPunctuationList* choosingPunctuationList =
       dynamic_cast<InputStates::ChoosingPunctuationList*>(state_.get());
+  InputStates::TextTemplate* textTemplate =
+      dynamic_cast<InputStates::TextTemplate*>(state_.get());
+
+  if (choosingPunctuationList != nullptr && symbolGrid_ != nullptr) {
+    return handleSymbolTableKeyEvent(context, key, origKey, stateCallback,
+                                     errorCallback);
+  }
 
   if (associatedPhrases != nullptr && associatedPhrases->autoTriggered) {
     if (key.check(FcitxKey_Tab)) {
@@ -1361,8 +1462,19 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
 
   bool shouldUseShiftKey = associatedPhrasesPlain != nullptr;
 
-  // Plain Bopomofo, Associated Phrases, and Number Input.
-  if (shouldUseShiftKey || numberInput != nullptr || icuTransformInput != nullptr) {
+  if (textTemplate != nullptr) {
+    // Shift and a selection key, for any selection keys; a key past the
+    // candidates of the page is swallowed.
+    int idx = shiftedSelectionKeyIndex(key, origKey);
+    if (idx != -1) {
+      if (idx < candidateList->size()) {
+        candidateList->candidate(idx).select(context);
+      }
+      return true;
+    }
+  } else if (shouldUseShiftKey || numberInput != nullptr ||
+             icuTransformInput != nullptr) {
+    // Plain Bopomofo, Associated Phrases, and Number Input.
     int code = origKey.code();
     // Shift-[1-9] keys can only be checked via raw key codes. The Key objects
     // in the selectionKeys_ do not carry such information.
@@ -1394,22 +1506,9 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
   bool isCursorMovingLeft = false;
   bool isCursorMovingRight = false;
 
-  if (choosingPunctuationList != nullptr) {
-    if (key.check(FcitxKey_grave)) {
-      keyHandler_->reset();
-      auto seq = std::make_unique<InputStates::StateSequence>();
-      seq->push_back(std::make_unique<InputStates::EmptyIgnoringPrevious>());
-      seq->push_back(std::make_unique<InputStates::SelectingFeature>(
-          [this](std::string input) {
-            auto lm = languageModelLoader_->getLM();
-            return lm->convertMacro(input);
-          }));
-      stateCallback(std::move(seq));
-      return true;
-    }
-  } else {
+  {
     // Note:
-    // - We do not allow moving cursor in punctuation list.
+    // - The symbol table, where the cursor does not move, is handled above.
     // - Shift + Left/Right is the default keybinding for moving cursor in
     //   candidate list. When movingCursorOption is enabled, we also allow using
     //   H/J/K/L or Left/Right without modifiers
@@ -1699,15 +1798,6 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
     }
 
     size_t originalCursor = 0;
-    if (choosingPunctuationList != nullptr) {
-      originalCursor = choosingPunctuationList->originalCursor;
-      keyHandler_->candidatePanelPunctuationListCancelled(
-          originalCursor, [stateCallback](std::unique_ptr<InputState> next) {
-            stateCallback(std::move(next));
-          });
-      return true;
-    }
-
     auto* choosing =
         dynamic_cast<InputStates::ChoosingCandidate*>(state_.get());
     if (choosing != nullptr) {
@@ -1719,17 +1809,6 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
           stateCallback(std::move(next));
         });
     return true;
-  }
-
-  if (choosingPunctuationList != nullptr) {
-    bool result = keyHandler_->candidatePanelPunctuationMaybeEntered(
-        MapFcitxKey(key, origKey), choosingPunctuationList->originalCursor,
-        [stateCallback](std::unique_ptr<InputState> newState) {
-          stateCallback(std::move(newState));
-        });
-    if (result) {
-      return true;
-    }
   }
 
   fcitx::CandidateLayoutHint layoutHint = getCandidateLayoutHint();
@@ -1917,6 +1996,247 @@ bool McBopomofoEngine::handleCandidateKeyEvent(
   return true;
 }
 
+bool McBopomofoEngine::handleSymbolTableKeyEvent(
+    fcitx::InputContext* context, fcitx::Key key, fcitx::Key origKey,
+    const McBopomofo::KeyHandler::StateCallback& stateCallback,
+    const McBopomofo::KeyHandler::ErrorCallback& errorCallback) {
+  auto* symbolTable =
+      dynamic_cast<InputStates::ChoosingPunctuationList*>(state_.get());
+  SmartLearning::SymbolGrid& grid = *symbolGrid_;
+  size_t originalCursor = symbolTable->originalCursor;
+  // Picking a symbol leaves this state, so nothing of it is used after.
+  auto pick = [&](size_t index) {
+    if (index >= symbolTable->candidates.size()) {
+      errorCallback();
+      return;
+    }
+    InputStates::ChoosingCandidate::Candidate candidate =
+        symbolTable->candidates[index];
+    keyHandler_->candidateSelected(candidate, originalCursor, stateCallback);
+  };
+  auto showOrBeep = [&](bool moved) {
+    if (moved) {
+      showSymbolTable(context);
+    } else {
+      errorCallback();
+    }
+  };
+
+  // The selection keys come first, so that a selection key that is also a
+  // punctuation key, such as ";", picks a row or a symbol.
+  int idx = key.keyListIndex(selectionKeys_);
+  if (idx == -1) {
+    idx = key.keyListIndex(numpadSelectionKeys_);
+  }
+  if (idx != -1) {
+    if (grid.isChoosingRow()) {
+      showOrBeep(grid.chooseRow(static_cast<size_t>(idx)));
+    } else if (auto index = grid.candidateAt(static_cast<size_t>(idx))) {
+      pick(*index);
+    } else {
+      errorCallback();
+    }
+    return true;
+  }
+
+  bool isDelete = key.check(FcitxKey_BackSpace) ||
+                  key.check(FcitxKey_Delete) || key.check(FcitxKey_KP_Delete);
+  // Backspace after picking a row goes back to the rows.
+  if (!grid.isChoosingRow() && isDelete) {
+    grid.cancelChoosingCell();
+    showSymbolTable(context);
+    return true;
+  }
+  if (key.check(FcitxKey_grave)) {
+    keyHandler_->candidatePanelFeatureMenuRequested(stateCallback);
+    return true;
+  }
+  // Another punctuation key shows its symbols, followed by the table.
+  if (keyHandler_->candidatePanelPunctuationMaybeEntered(
+          MapFcitxKey(key, origKey), originalCursor, stateCallback)) {
+    return true;
+  }
+  if (key.check(FcitxKey_Escape) || isDelete) {
+    keyHandler_->candidatePanelPunctuationListCancelled(originalCursor,
+                                                        stateCallback);
+    return true;
+  }
+  if (key.check(FcitxKey_Return) || key.check(FcitxKey_KP_Enter)) {
+    pick(grid.highlighted());
+    return true;
+  }
+
+  // The arrow keys move the highlight in their directions.
+  if (key.check(FcitxKey_Left) || key.check(FcitxKey_KP_Left)) {
+    showOrBeep(grid.highlightPrevious());
+    return true;
+  }
+  if (key.check(FcitxKey_Right) || key.check(FcitxKey_KP_Right)) {
+    showOrBeep(grid.highlightNext());
+    return true;
+  }
+  if (key.check(FcitxKey_Up) || key.check(FcitxKey_KP_Up)) {
+    showOrBeep(grid.moveByRows(-1));
+    return true;
+  }
+  if (key.check(FcitxKey_Down) || key.check(FcitxKey_KP_Down)) {
+    showOrBeep(grid.moveByRows(1));
+    return true;
+  }
+  if (key.check(FcitxKey_Home) || key.check(FcitxKey_KP_Home)) {
+    showOrBeep(grid.highlightFirst());
+    return true;
+  }
+  if (key.check(FcitxKey_End) || key.check(FcitxKey_KP_End)) {
+    showOrBeep(grid.highlightLast());
+    return true;
+  }
+
+  MovingCursorOption movingCursorOption =
+      config_.allowMovingCursorWhenChoosingCandidates.value();
+  size_t rowsPerPage = std::max<size_t>(selectionKeys_.size(), 1);
+  bool isPageDown =
+      key.check(FcitxKey_space) || key.check(FcitxKey_Page_Down) ||
+      key.check(FcitxKey_KP_Page_Down) ||
+      key.checkKeyList(instance_->globalConfig().defaultNextPage()) ||
+      (movingCursorOption == MovingCursorOption::UseJK &&
+       key.check(FcitxKey_l)) ||
+      (movingCursorOption == MovingCursorOption::UseHL &&
+       key.check(FcitxKey_k));
+  bool isPageUp =
+      key.check(FcitxKey_Page_Up) || key.check(FcitxKey_KP_Page_Up) ||
+      key.checkKeyList(instance_->globalConfig().defaultPrevPage()) ||
+      (movingCursorOption == MovingCursorOption::UseJK &&
+       key.check(FcitxKey_h)) ||
+      (movingCursorOption == MovingCursorOption::UseHL &&
+       key.check(FcitxKey_j));
+  if (isPageDown) {
+    showOrBeep(grid.nextPage(rowsPerPage));
+    return true;
+  }
+  if (isPageUp) {
+    showOrBeep(grid.previousPage(rowsPerPage));
+    return true;
+  }
+
+  // Plain Bopomofo picks the highlighted symbol and goes on with the key.
+  if (keyHandler_->handleCandidateKeyForTraditionalBopomofoIfRequired(
+          MapFcitxKey(key, origKey), [&] { pick(grid.highlighted()); },
+          stateCallback, errorCallback)) {
+    return true;
+  }
+
+  errorCallback();
+  return true;
+}
+
+void McBopomofoEngine::showSymbolTable(fcitx::InputContext* context) {
+  auto* symbolTable =
+      dynamic_cast<InputStates::ChoosingPunctuationList*>(state_.get());
+  if (symbolTable == nullptr || symbolGrid_ == nullptr) {
+    return;
+  }
+  const SmartLearning::SymbolGrid& grid = *symbolGrid_;
+  const auto& rows = grid.rows();
+  auto candidateList = std::make_unique<fcitx::CommonCandidateList>();
+  candidateList->setSelectionKey(selectionKeys_);
+  candidateList->setPageSize(
+      static_cast<int>(std::max<size_t>(selectionKeys_.size(), 1)));
+  KeyHandler::StateCallback callback =
+      [this, context](std::unique_ptr<InputState> next) {
+        handleStateOrSequence(context, std::move(next));
+      };
+
+  int cursor = 0;
+  if (grid.isChoosingRow()) {
+    // The rows labeled with the keys, from the highlighted one down, each
+    // shown as its title and symbols; the highlighted symbol is underlined.
+    candidateList->setLayoutHint(fcitx::CandidateLayoutHint::Vertical);
+    auto [first, last] = grid.labeledRowRange();
+    for (size_t r = first; r < last; ++r) {
+      const auto& row = rows[r];
+      fcitx::Text text;
+      if (!row.title.empty()) {
+        text.append(row.title + "  ");
+      }
+      for (size_t i = row.start; i < row.start + row.count; ++i) {
+        if (i > row.start) {
+          text.append(" ");
+        }
+        const std::string& value = symbolTable->candidates[i].value;
+        if (i == grid.highlighted()) {
+          text.append(value, fcitx::TextFormatFlags{
+                                 fcitx::TextFormatFlag::Underline} |
+                                 fcitx::TextFormatFlag::Bold);
+        } else {
+          text.append(value);
+        }
+      }
+      candidateList->append(std::make_unique<McBopomofoSymbolRowWord>(
+          std::move(text), [this, r](fcitx::InputContext* ic) {
+            if (symbolGrid_ != nullptr && symbolGrid_->chooseRowAt(r)) {
+              showSymbolTable(ic);
+            }
+          }));
+    }
+  } else if (!rows.empty()) {
+    // The symbols of the row picked, labeled from its first one.
+    candidateList->setLayoutHint(fcitx::CandidateLayoutHint::Horizontal);
+    const auto& row = rows[grid.highlightedRow()];
+    for (size_t i = row.start; i < row.start + row.count; ++i) {
+      const auto& c = symbolTable->candidates[i];
+      candidateList->append(std::make_unique<McBopomofoCandidateWord>(
+          fcitx::Text(c.value), c, symbolTable->originalCursor, keyHandler_,
+          callback));
+    }
+    cursor = static_cast<int>(grid.highlighted() - row.start);
+  }
+  if (candidateList->size() > 0) {
+    candidateList->setGlobalCursorIndex(cursor);
+  }
+  context->inputPanel().reset();
+  context->inputPanel().setCandidateList(std::move(candidateList));
+  context->updateUserInterface(fcitx::UserInterfaceComponent::InputPanel);
+  updatePreedit(context, symbolTable);
+}
+
+std::string McBopomofoEngine::selectionKeyCharacters() const {
+  switch (config_.selectionKeys.value()) {
+    case SelectionKeys::Key_asdfghjkl:
+      return "asdfghjkl";
+    case SelectionKeys::Key_asdfzxcvb:
+      return "asdfzxcvb";
+    default:
+      return "123456789";
+  }
+}
+
+int McBopomofoEngine::shiftedSelectionKeyIndex(const fcitx::Key& key,
+                                               const fcitx::Key& origKey) const {
+  if (!(origKey.states() & fcitx::KeyState::Shift) ||
+      (origKey.states() & fcitx::KeyState::Ctrl)) {
+    return -1;
+  }
+  std::string keys = selectionKeyCharacters();
+  if (keys == "123456789") {
+    // Shift and a digit can only be told by the raw key code.
+    int code = origKey.code();
+    if (code >= kFcitxRawKeycode_1 && code <= kFcitxRawKeycode_9) {
+      return code - kFcitxRawKeycode_1;
+    }
+    return -1;
+  }
+  char letter = 0;
+  auto sym = key.sym();
+  if (sym >= FcitxKey_A && sym <= FcitxKey_Z) {
+    letter = static_cast<char>('a' + (sym - FcitxKey_A));
+  } else if (sym >= FcitxKey_a && sym <= FcitxKey_z) {
+    letter = static_cast<char>('a' + (sym - FcitxKey_a));
+  }
+  size_t index = letter != 0 ? keys.find(letter) : std::string::npos;
+  return index == std::string::npos ? -1 : static_cast<int>(index);
+}
+
 void McBopomofoEngine::enterNewState(fcitx::InputContext* context,
                                      std::unique_ptr<InputState> newState) {
   // Hold the previous state, and transfer the ownership of newState.
@@ -1925,6 +2245,11 @@ void McBopomofoEngine::enterNewState(fcitx::InputContext* context,
 
   InputState* prevPtr = prevState.get();
   InputState* currentPtr = state_.get();
+
+  if (dynamic_cast<InputStates::ChoosingPunctuationList*>(currentPtr) ==
+      nullptr) {
+    symbolGrid_.reset();
+  }
 
   if (auto* empty = dynamic_cast<InputStates::Empty*>(currentPtr)) {
     handleEmptyState(context, prevPtr, empty);
@@ -1967,6 +2292,9 @@ void McBopomofoEngine::enterNewState(fcitx::InputContext* context,
   } else if (auto* icuTransformInput =
                  dynamic_cast<InputStates::IcuTransformInput*>(currentPtr)) {
     handleCandidatesState(context, prevPtr, icuTransformInput);
+  } else if (auto* textTemplate =
+                 dynamic_cast<InputStates::TextTemplate*>(currentPtr)) {
+    handleCandidatesState(context, prevPtr, textTemplate);
   } else if (auto* selectingFeature =
                dynamic_cast<InputStates::SelectingFeature*>(currentPtr)) {
     handleCandidatesState(context, prevPtr, selectingFeature);
@@ -2048,11 +2376,60 @@ void McBopomofoEngine::handleCandidatesState(fcitx::InputContext* context,
       dynamic_cast<InputStates::NumberInput*>(state_.get());
   InputStates::IcuTransformInput* icuTransformInput =
       dynamic_cast<InputStates::IcuTransformInput*>(state_.get());
+  auto* textTemplate = dynamic_cast<InputStates::TextTemplate*>(current);
+
+  if (auto* symbolTable =
+          dynamic_cast<InputStates::ChoosingPunctuationList*>(current)) {
+    // The symbol table is a grid of symbols, listed a row at a time.
+    if (keysConfig == SelectionKeys::Key_asdfghjkl) {
+      selectionKeys_ = fcitx::Key::keyListFromString("a s d f g h j k l");
+      numpadSelectionKeys_ = fcitx::KeyList();
+    } else if (keysConfig == SelectionKeys::Key_asdfzxcvb) {
+      selectionKeys_ = fcitx::Key::keyListFromString("a s d f z x c v b");
+      numpadSelectionKeys_ = fcitx::KeyList();
+    } else {
+      selectionKeys_ = fcitx::Key::keyListFromString("1 2 3 4 5 6 7 8 9");
+      numpadSelectionKeys_ = fcitx::Key::keyListFromString(
+          "KP_1 KP_2 KP_3 KP_4 KP_5 KP_6 KP_7 KP_8 KP_9");
+    }
+    std::vector<SmartLearning::SymbolSection> sections;
+    if (!symbolTable->candidates.empty()) {
+      const std::string& reading = symbolTable->candidates.front().reading;
+      auto lm = languageModelLoader_->getLM();
+      for (auto& [title, count] :
+           lm->getSymbolSections(reading, _("Symbols for the Key"))) {
+        sections.push_back({std::move(title), count});
+      }
+    }
+    // The panel width is not known, so a row has as many symbols as there are
+    // selection keys, each of them labeled.
+    symbolGrid_ = std::make_unique<SmartLearning::SymbolGrid>(
+        sections, symbolTable->candidates.size(), selectionKeys_.size(),
+        selectionKeys_.size());
+    if (!symbolTable->candidates.empty()) {
+      // Start at the symbol of the punctuation key.
+      symbolGrid_->setHighlighted(
+          languageModelLoader_->getLM()->getSymbolInitialIndex(
+              symbolTable->candidates.front().reading));
+    }
+    showSymbolTable(context);
+    return;
+  }
 
   bool useShiftKey = numberInput != nullptr || icuTransformInput != nullptr ||
                      associatedPhrasesPlain != nullptr;
 
-  if ((associatedPhrases != nullptr && associatedPhrases->autoTriggered)) {
+  if (textTemplate != nullptr) {
+    // Picked with Shift and a selection key, since the keys type the code.
+    std::string keys = selectionKeyCharacters();
+    std::vector<std::string> labels;
+    for (char k : keys) {
+      labels.push_back("⇧" + std::string(1, k) + ". ");
+    }
+    candidateList->setLabels(labels);
+    candidateList->setPageSize(static_cast<int>(keys.size()));
+  } else if ((associatedPhrases != nullptr &&
+              associatedPhrases->autoTriggered)) {
     selectionKeys_ = fcitx::Key::keyListFromString("Shift+Return");
     std::vector<std::string> labels = {"⇧⏎ "};
     candidateList->setLabels(labels);
@@ -2123,16 +2500,10 @@ void McBopomofoEngine::handleCandidatesState(fcitx::InputContext* context,
     }
 
     for (const auto& c : choosing->candidates) {
-      std::string displayText = c.value;
-
-      if (valueCountMap[displayText] > 1) {
-        displayText += " (";
-        std::string reading = c.reading;
-        std::replace(reading.begin(), reading.end(),
-                     KeyHandler::kJoinSeparator[0], ' ');
-        displayText += reading;
-        displayText += ")";
-      }
+      // A symbol may be in more than one category of the symbol table, and
+      // its reading is not shown.
+      std::string displayText = SmartLearning::CandidateDisplayText(
+          c.value, c.reading, valueCountMap[c.value]);
 
       std::unique_ptr<fcitx::CandidateWord> candidate =
           std::make_unique<McBopomofoCandidateWord>(fcitx::Text(displayText), c,
@@ -2236,6 +2607,12 @@ void McBopomofoEngine::handleCandidatesState(fcitx::InputContext* context,
                                                        displayText, callback);
       candidateList->append(std::move(candidate));
     }
+  } else if (textTemplate != nullptr) {
+    for (size_t i = 0; i < textTemplate->texts.size(); ++i) {
+      candidateList->append(std::make_unique<McBopomofoDirectInsertWord>(
+          fcitx::Text(textTemplate->displayTexts[i]), textTemplate->texts[i],
+          callback));
+    }
   } else if (customMenu != nullptr) {
     size_t index = 0;
     for (const auto& entry : customMenu->entries) {
@@ -2294,6 +2671,7 @@ fcitx::CandidateLayoutHint McBopomofoEngine::getCandidateLayoutHint() const {
 
   if (dynamic_cast<InputStates::NumberInput*>(state_.get()) != nullptr ||
       dynamic_cast<InputStates::IcuTransformInput*>(state_.get()) != nullptr ||
+      dynamic_cast<InputStates::TextTemplate*>(state_.get()) != nullptr ||
       dynamic_cast<InputStates::SelectingDictionary*>(state_.get()) !=
           nullptr ||
       dynamic_cast<InputStates::ShowingCharInfo*>(state_.get()) != nullptr ||

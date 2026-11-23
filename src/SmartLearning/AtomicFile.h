@@ -1,10 +1,12 @@
 #ifndef SRC_SMARTLEARNING_ATOMICFILE_H_
 #define SRC_SMARTLEARNING_ATOMICFILE_H_
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace McBopomofo::SmartLearning {
 
@@ -25,6 +27,27 @@ bool createFileIfAbsent(const std::filesystem::path& path,
 // Reads the whole file. Returns nullopt if it is not a regular file or
 // cannot be read completely.
 std::optional<std::string> readWholeFile(const std::filesystem::path& path);
+
+// What tells whether a file changed: whether it exists, its modification time
+// and its size.
+struct FileStamp {
+  bool exists = false;
+  std::filesystem::file_time_type modified{};
+  std::uintmax_t size = 0;
+
+  bool operator==(const FileStamp& other) const {
+    return exists == other.exists && modified == other.modified &&
+           size == other.size;
+  }
+  bool operator!=(const FileStamp& other) const { return !(*this == other); }
+};
+
+FileStamp stampOf(const std::filesystem::path& path);
+
+// The lines of a text, split at any line break: LF, CR, VT, FF, NEL, LINE
+// SEPARATOR and PARAGRAPH SEPARATOR. CR LF gives an empty line between, like
+// a split at each of them.
+std::vector<std::string_view> splitLines(std::string_view text);
 
 }  // namespace McBopomofo::SmartLearning
 

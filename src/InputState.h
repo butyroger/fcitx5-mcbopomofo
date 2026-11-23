@@ -296,6 +296,29 @@ struct IcuTransformInput : NotEmpty {
   std::vector<std::string> candidates;
 };
 
+// Typing the code of a text template after the backtick key, such as "addr"
+// for an address, or a number, such as a date or 10*15/6, for its formats.
+// The candidates are the texts, shown as |displayTexts|.
+struct TextTemplate : NotEmpty {
+  TextTemplate(const std::string& title, std::string code,
+               std::vector<std::string> displayTexts,
+               std::vector<std::string> texts)
+      : NotEmpty("[" + title + "] " + code,
+                 ("[" + title + "] " + code).length(), ""),
+        title(title),
+        code(std::move(code)),
+        displayTexts(std::move(displayTexts)),
+        texts(std::move(texts)) {}
+  TextTemplate(const TextTemplate& other)
+      : TextTemplate(other.title, other.code, other.displayTexts,
+                     other.texts) {}
+
+  const std::string title;
+  const std::string code;
+  const std::vector<std::string> displayTexts;
+  const std::vector<std::string> texts;
+};
+
 struct Big5 : InputState {
   explicit Big5(std::string hexCode = "") : hexCode(std::move(hexCode)) {}
   Big5(Big5 const& code) : hexCode(code.hexCode) {}

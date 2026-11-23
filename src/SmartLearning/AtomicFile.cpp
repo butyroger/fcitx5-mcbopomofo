@@ -112,4 +112,49 @@ std::optional<std::string> readWholeFile(const fs::path& path) {
   return ss.str();
 }
 
+FileStamp stampOf(const fs::path& path) {
+  FileStamp stamp;
+  std::error_code ec;
+  if (path.empty() || !fs::is_regular_file(path, ec)) {
+    return stamp;
+  }
+  stamp.exists = true;
+  stamp.modified = fs::last_write_time(path, ec);
+  stamp.size = fs::file_size(path, ec);
+  if (ec) {
+    stamp.size = 0;
+  }
+  return stamp;
+}
+
+std::vector<std::string_view> splitLines(std::string_view text) {
+  std::vector<std::string_view> lines;
+  size_t start = 0;
+  size_t i = 0;
+  while (i < text.size()) {
+    size_t breakLength = 0;
+    auto c = static_cast<unsigned char>(text[i]);
+    if (c >= 0x0A && c <= 0x0D) {
+      breakLength = 1;
+    } else if (c == 0xC2 && i + 1 < text.size() &&
+               static_cast<unsigned char>(text[i + 1]) == 0x85) {
+      breakLength = 2;
+    } else if (c == 0xE2 && i + 2 < text.size() &&
+               static_cast<unsigned char>(text[i + 1]) == 0x80 &&
+               (static_cast<unsigned char>(text[i + 2]) == 0xA8 ||
+                static_cast<unsigned char>(text[i + 2]) == 0xA9)) {
+      breakLength = 3;
+    }
+    if (breakLength == 0) {
+      ++i;
+      continue;
+    }
+    lines.push_back(text.substr(start, i - start));
+    i += breakLength;
+    start = i;
+  }
+  lines.push_back(text.substr(start));
+  return lines;
+}
+
 }  // namespace McBopomofo::SmartLearning

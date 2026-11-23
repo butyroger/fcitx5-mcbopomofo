@@ -45,7 +45,7 @@
 namespace McBopomofo {
 
 constexpr char kSpaceSeparator[] = " ";
-constexpr char kPunctuationListKey = '`';  // Hit the key to bring up the list.
+constexpr char kTextTemplateKey = '`';
 constexpr char kPunctuationListUnigramKey[] = "_punctuation_list";
 constexpr char kPunctuationKeyPrefix[] = "_punctuation_";
 constexpr char kCtrlPunctuationKeyPrefix[] = "_ctrl_punctuation_";
@@ -444,6 +444,12 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
         selectPhraseAfterCursorAsCandidate_ && moveCursorAfterSelection_) {
       grid_.setCursor(originalCursor - 1);
     }
+    // At a punctuation, the symbol table is opened, starting at the symbols
+    // of the same key.
+    if (inputMode_ == InputMode::McBopomofo &&
+        expandPunctuationToSymbolTable(stateCallback)) {
+      return true;
+    }
     auto candidateState = buildChoosingCandidateState(
         buildInputtingState().get(), originalCursor);
     stateCallback(std::move(candidateState));
@@ -627,29 +633,33 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     }
   }
 
-  // Punctuation key: backtick or grave accent.
-  if (simpleAscii == kPunctuationListKey &&
-      lm_->hasUnigrams(kPunctuationListUnigramKey)) {
-    if (reading_.isEmpty()) {
-      grid_.insertReading(kPunctuationListUnigramKey);
-      walk();
-
-      size_t originalCursor = grid_.cursor();
-      if (selectPhraseAfterCursorAsCandidate_) {
-        grid_.setCursor(originalCursor - 1);
-      }
-      auto inputtingState = buildInputtingState();
-      auto choosingCandidateState =
-          buildChoosingCandidateState(inputtingState.get(), originalCursor);
-      auto choosingPunctuationList =
-          std::make_unique<InputStates::ChoosingPunctuationList>(
-              *choosingCandidateState);
-      stateCallback(std::move(choosingPunctuationList));
-    } else {
-      // Punctuation ignored if a bopomofo reading is active..
+  // The backtick key opens the text templates (and the quick numbers), or
+  // the symbol table in Plain Bopomofo.
+  if (simpleAscii == kTextTemplateKey) {
+    if (!reading_.isEmpty()) {
+      // Ignored while a Bopomofo reading is unfinished.
       errorCallback();
+      return true;
     }
-    return true;
+    if (inputMode_ == InputMode::McBopomofo) {
+      if (textTemplateStore_ != nullptr) {
+        textTemplateStore_->createSampleFileIfNeeded();
+      }
+      // What is composed is committed first; a marking is taken as the
+      // composition.
+      if (dynamic_cast<InputStates::Inputting*>(state) != nullptr ||
+          dynamic_cast<InputStates::Marking*>(state) != nullptr) {
+        learnFromCommittedComposition();
+        stateCallback(std::make_unique<InputStates::Committing>(
+            buildInputtingState()->composingBuffer));
+      }
+      reset();
+      stateCallback(buildTextTemplateState(""));
+      return true;
+    }
+    if (enterSymbolTable(McBopomofoLM::kSymbolsKeyPrefix, stateCallback)) {
+      return true;
+    }
   }
 
   if (key.ascii != 0 && !key.isFromNumberPad) {
@@ -824,6 +834,16 @@ bool KeyHandler::candidatePanelPunctuationMaybeEntered(
   } else {
     grid_.deleteReadingBeforeCursor();
   }
+  readingBeforeSymbolTable_.clear();
+
+  if (inputMode_ != InputMode::PlainBopomofo) {
+    // The symbols of the key, followed by the whole symbol table.
+    walk();
+    if (enterSymbolTable(McBopomofoLM::kSymbolsKeyPrefix + unigramKey,
+                         stateCallback)) {
+      return true;
+    }
+  }
 
   grid_.insertReading(unigramKey);
   walk();
@@ -856,19 +876,45 @@ void KeyHandler::candidatePanelPunctuationListCancelled(
     stateCallback(std::move(emptyIgnorePreviousState));
     return;
   }
+  grid_.setCursor(originalCursor);
+  grid_.deleteReadingBeforeCursor();
+  // Put back the punctuation that the symbol table replaced.
+  if (!readingBeforeSymbolTable_.empty()) {
+    grid_.insertReading(readingBeforeSymbolTable_);
+    readingBeforeSymbolTable_.clear();
+  }
+  if (grid_.length() == 0) {
+    reset();
+    stateCallback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
+  } else {
+    walk();
+    stateCallback(buildInputtingState());
+  }
+}
+
+void KeyHandler::candidatePanelFeatureMenuRequested(
+    const StateCallback& stateCallback) {
   if (selectPhraseAfterCursorAsCandidate_) {
     grid_.deleteReadingAfterCursor();
   } else {
     grid_.deleteReadingBeforeCursor();
   }
+  readingBeforeSymbolTable_.clear();
   walk();
-  grid_.setCursor(originalCursor > 0 ? originalCursor - 1 : 0);
-  if (grid_.length() == 0) {
+  if (grid_.length() > 0) {
+    handleForceCommitAndReset(stateCallback);
+  } else {
     reset();
     stateCallback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
-  } else {
-    stateCallback(buildInputtingState());
   }
+  stateCallback(std::make_unique<InputStates::SelectingFeature>(
+      [this](std::string input) {
+        auto* lm = dynamic_cast<McBopomofoLM*>(this->lm_.get());
+        if (lm != nullptr) {
+          return lm->convertMacro(input);
+        }
+        return input;
+      }));
 }
 
 void KeyHandler::candidatePanelCancelled(size_t originalCursor,
@@ -978,6 +1024,7 @@ void KeyHandler::reset() {
   grid_.clear();
   latestWalk_ = Formosa::Gramambular2::ReadingGrid::WalkResult();
   phrasesPickedInComposition_.clear();
+  readingBeforeSymbolTable_.clear();
 }
 
 void KeyHandler::clearReading() {
@@ -1589,6 +1636,117 @@ bool KeyHandler::handleIcuTransformInput(Key key,
 }
 
 
+
+bool KeyHandler::handleTextTemplateInput(Key key,
+                                         InputStates::TextTemplate* state,
+                                         const StateCallback& stateCallback,
+                                         const ErrorCallback& errorCallback) {
+  if (key.ascii == Key::ESC) {
+    stateCallback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
+    return true;
+  }
+  if (key.isDeleteKeys()) {
+    if (state->code.empty()) {
+      stateCallback(std::make_unique<InputStates::EmptyIgnoringPrevious>());
+    } else {
+      stateCallback(buildTextTemplateState(
+          state->code.substr(0, state->code.size() - 1)));
+    }
+    return true;
+  }
+  if (key.ctrlPressed) {
+    return false;
+  }
+  // The backtick key again opens the symbol table; what was composed has
+  // been committed already.
+  if (key.ascii == kTextTemplateKey) {
+    reset();
+    if (!enterSymbolTable(McBopomofoLM::kSymbolsKeyPrefix, stateCallback)) {
+      errorCallback();
+    }
+    return true;
+  }
+  auto c = static_cast<unsigned char>(key.ascii);
+  if (c < 0x80 && isprint(c) && c != Key::SPACE) {
+    if (state->code.size() > SmartLearning::kMaxTextTemplateCodeLength) {
+      errorCallback();
+      return true;
+    }
+    stateCallback(buildTextTemplateState(state->code + key.ascii));
+    return true;
+  }
+  return false;
+}
+
+std::unique_ptr<InputStates::TextTemplate> KeyHandler::buildTextTemplateState(
+    const std::string& code) {
+  static const std::vector<SmartLearning::TextTemplateEntry> kNoTemplates;
+  // Only a code that is not a number looks at the templates.
+  const auto& templates =
+      textTemplateStore_ != nullptr && !SmartLearning::IsNumberCode(code)
+          ? textTemplateStore_->entries()
+          : kNoTemplates;
+  std::vector<std::string> displayTexts;
+  std::vector<std::string> texts;
+  for (auto& entry : SmartLearning::TextTemplateCandidates(
+           templates, code, textTemplateClock_())) {
+    displayTexts.push_back(SmartLearning::TextTemplateDisplayText(entry));
+    texts.push_back(std::move(entry.text));
+  }
+  std::string title = SmartLearning::IsNumberCode(code)
+                          ? localizedStrings_->quickNumbersTitle()
+                          : localizedStrings_->textTemplatesTitle();
+  return std::make_unique<InputStates::TextTemplate>(
+      title, code, std::move(displayTexts), std::move(texts));
+}
+
+bool KeyHandler::enterSymbolTable(const std::string& key,
+                                  const StateCallback& stateCallback) {
+  if (!lm_->hasUnigrams(key)) {
+    return false;
+  }
+  readingBeforeSymbolTable_.clear();
+  grid_.insertReading(key);
+  walk();
+  size_t originalCursor = grid_.cursor();
+  if (selectPhraseAfterCursorAsCandidate_) {
+    grid_.setCursor(originalCursor - 1);
+  }
+  auto inputting = buildInputtingState();
+  auto choosing = buildChoosingCandidateState(inputting.get(), originalCursor);
+  stateCallback(std::make_unique<InputStates::ChoosingPunctuationList>(
+      *choosing));
+  return true;
+}
+
+bool KeyHandler::expandPunctuationToSymbolTable(
+    const StateCallback& stateCallback) {
+  size_t endCursor = 0;
+  auto nodeIter =
+      latestWalk_.findNodeAt(actualCandidateCursorIndex(), &endCursor);
+  if (nodeIter == latestWalk_.nodes.cend()) {
+    return false;
+  }
+  std::string reading = (*nodeIter)->reading();
+  if ((*nodeIter)->spanningLength() != 1 || reading.rfind('_', 0) != 0 ||
+      reading.find("punctuation_") == std::string::npos ||
+      reading.rfind(McBopomofoLM::kSymbolsKeyPrefix, 0) == 0 ||
+      reading.rfind(kPunctuationListUnigramKey, 0) == 0) {
+    return false;
+  }
+  std::string key = McBopomofoLM::kSymbolsKeyPrefix + reading;
+  if (!lm_->hasUnigrams(key)) {
+    return false;
+  }
+  grid_.setCursor(endCursor);
+  grid_.deleteReadingBeforeCursor();
+  walk();
+  if (!enterSymbolTable(key, stateCallback)) {
+    return false;
+  }
+  readingBeforeSymbolTable_ = reading;
+  return true;
+}
 
 bool KeyHandler::handleBig5(Key key, McBopomofo::InputStates::Big5* state,
                             StateCallback stateCallback,

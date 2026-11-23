@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -38,7 +39,9 @@
 #include "CommonSentences.h"
 #include "EnglishWords.h"
 #include "KeyHandler.h"
+#include "SymbolTable.h"
 #include "TemporaryPhrases.h"
+#include "TextTemplates.h"
 #include "UserPhraseFile.h"
 #include "gtest/gtest.h"
 
@@ -81,6 +84,8 @@ class PlainLocalizedStrings : public KeyHandler::LocalizedStrings {
   std::string tabToCompleteSentence(const std::string& rest) override {
     return "Tab: " + rest;
   }
+  std::string textTemplatesTitle() override { return "Text Templates"; }
+  std::string quickNumbersTitle() override { return "Quick Numbers"; }
 };
 
 // The keys typing the syllables one after another, with a space for the first
@@ -231,12 +236,23 @@ class KeyHandlerSmartTest : public ::testing::Test {
   }
 
   void press(const Key& key) {
-    keyHandler_->handle(
-        key, state_.get(),
-        [this](std::unique_ptr<InputState> newState) {
-          take(std::move(newState));
-        },
-        [] {});
+    dispatch(key, [] {});
+  }
+
+  // Passes the key as the engine does: in the text templates, the keys go to
+  // the templates first, and what is left to the candidate window is
+  // swallowed when there are no candidates.
+  bool dispatch(const Key& key, const KeyHandler::ErrorCallback& error) {
+    auto callback = [this](std::unique_ptr<InputState> newState) {
+      take(std::move(newState));
+    };
+    if (auto* textTemplate =
+            dynamic_cast<InputStates::TextTemplate*>(state_.get())) {
+      return keyHandler_->handleTextTemplateInput(key, textTemplate, callback,
+                                                  error) ||
+             textTemplate->texts.empty();
+    }
+    return keyHandler_->handle(key, state_.get(), callback, error);
   }
 
   void take(std::unique_ptr<InputState> newState) {
@@ -278,12 +294,7 @@ class KeyHandlerSmartTest : public ::testing::Test {
 
   // Presses the key and tells whether it was handled, counting the beeps.
   bool pressHandled(const Key& key) {
-    return keyHandler_->handle(
-        key, state_.get(),
-        [this](std::unique_ptr<InputState> newState) {
-          take(std::move(newState));
-        },
-        [this] { ++errors_; });
+    return dispatch(key, [this] { ++errors_; });
   }
 
   std::vector<std::string> candidateValues() {
@@ -1211,6 +1222,321 @@ TEST_F(KeyHandlerSmartTest, EqualsAfterADivisionByZeroIsJustTyped) {
   restart();
   type("(5/0+1)=");
   EXPECT_EQ(composingBuffer(), "（5/0+1)＝");
+}
+
+// Text templates, quick numbers and the symbol table.
+
+namespace {
+
+InputStates::TextTemplate* textTemplateOf(InputState* state) {
+  return dynamic_cast<InputStates::TextTemplate*>(state);
+}
+
+InputStates::ChoosingPunctuationList* symbolTableOf(InputState* state) {
+  return dynamic_cast<InputStates::ChoosingPunctuationList*>(state);
+}
+
+const Key kBacktick = Key::asciiKey('`');
+
+}  // namespace
+
+// Mac testPunctuationTable: ` opens the text templates, and ` again opens the
+// symbol table.
+TEST_F(KeyHandlerSmartTest, BacktickTwiceOpensTheSymbolTable) {
+  press(kBacktick);
+  press(kBacktick);
+  ASSERT_NE(symbolTableOf(state_.get()), nullptr);
+  auto values = candidateValues();
+  EXPECT_NE(std::find(values.begin(), values.end(), "，"), values.end());
+}
+
+// Mac testInputBufferThenBacktickThenEsc.
+TEST_F(KeyHandlerSmartTest, BacktickAfterUnfinishedReadingIsRefused) {
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
+  keyHandler_->setEscTrimsMistypedText(false);
+  type("s");
+  ASSERT_NE(dynamic_cast<InputStates::Inputting*>(state_.get()), nullptr);
+  EXPECT_TRUE(pressHandled(kBacktick));
+  EXPECT_EQ(errors_, 1);
+  EXPECT_EQ(composingBuffer(), "ㄋ");
+  pressEsc();
+  EXPECT_TRUE(isEmptyState());
+  EXPECT_EQ(committed_, "");
+}
+
+// With the smart switching, a symbol after an unfinished reading makes the
+// keys English and is kept, as for any other symbol.
+TEST_F(KeyHandlerSmartTest, BacktickAfterUnfinishedReadingInEnglishIsTyped) {
+  type("s");
+  press(kBacktick);
+  EXPECT_EQ(composingBuffer(), "s`");
+  restart();
+  type("Hello");
+  press(kBacktick);
+  EXPECT_EQ(composingBuffer(), "Hello`");
+}
+
+// Mac testInputBufferWithCharactersThenBacktickThenEsc.
+TEST_F(KeyHandlerSmartTest, BacktickCommitsTheCompositionAndOpensTemplates) {
+  type("su3cl3");
+  ASSERT_EQ(composingBuffer(), "你好");
+  press(kBacktick);
+  EXPECT_EQ(committed_, "你好");
+  ASSERT_NE(textTemplateOf(state_.get()), nullptr);
+  pressEsc();
+  EXPECT_TRUE(isEmptyState());
+  EXPECT_EQ(committed_, "你好");
+}
+
+// A marking is taken as the composition, and committed.
+TEST_F(KeyHandlerSmartTest, BacktickInMarkingCommitsTheComposition) {
+  type("su3cl3");
+  press(Key::namedKey(Key::KeyName::LEFT, /*shiftPressed=*/true));
+  ASSERT_NE(dynamic_cast<InputStates::Marking*>(state_.get()), nullptr);
+  press(kBacktick);
+  EXPECT_EQ(committed_, "你好");
+  EXPECT_NE(textTemplateOf(state_.get()), nullptr);
+}
+
+// Mac testBacktickKey: with nothing composed, ` opens the text templates.
+TEST_F(KeyHandlerSmartTest, BacktickWithNothingComposedOpensTemplates) {
+  EXPECT_TRUE(pressHandled(kBacktick));
+  auto* textTemplate = textTemplateOf(state_.get());
+  ASSERT_NE(textTemplate, nullptr);
+  EXPECT_EQ(textTemplate->code, "");
+  EXPECT_EQ(textTemplate->composingBuffer, "[Text Templates] ");
+  EXPECT_EQ(committed_, "");
+  EXPECT_EQ(errors_, 0);
+}
+
+// Mac testBacktickThenEsc.
+TEST_F(KeyHandlerSmartTest, BacktickThenEsc) {
+  press(kBacktick);
+  ASSERT_NE(textTemplateOf(state_.get()), nullptr);
+  pressEsc();
+  EXPECT_TRUE(isEmptyState());
+}
+
+// Mac testBacktickThenBackspace.
+TEST_F(KeyHandlerSmartTest, BacktickThenBackspace) {
+  press(kBacktick);
+  type("ab");
+  press(Key::asciiKey(Key::BACKSPACE));
+  ASSERT_NE(textTemplateOf(state_.get()), nullptr);
+  EXPECT_EQ(textTemplateOf(state_.get())->code, "a");
+  press(Key::asciiKey(Key::DELETE));
+  ASSERT_NE(textTemplateOf(state_.get()), nullptr);
+  EXPECT_EQ(textTemplateOf(state_.get())->code, "");
+  press(Key::asciiKey(Key::BACKSPACE));
+  EXPECT_TRUE(isEmptyState());
+  EXPECT_EQ(committed_, "");
+}
+
+// Mac testBacktickThenBacktick.
+TEST_F(KeyHandlerSmartTest, BacktickThenBacktick) {
+  press(kBacktick);
+  type("ad");
+  press(kBacktick);
+  auto* symbolTable = symbolTableOf(state_.get());
+  ASSERT_NE(symbolTable, nullptr);
+  EXPECT_EQ(symbolTable->candidates.front().reading, "_symbols_");
+}
+
+// Mac testBacktickThenPunctuation: the punctuation is a part of the code.
+TEST_F(KeyHandlerSmartTest, BacktickThenPunctuation) {
+  press(kBacktick);
+  press(Key::asciiKey('<'));
+  auto* textTemplate = textTemplateOf(state_.get());
+  ASSERT_NE(textTemplate, nullptr);
+  EXPECT_EQ(textTemplate->code, "<");
+}
+
+// Mac testDoubleBackquoteForceCommit.
+TEST_F(KeyHandlerSmartTest, SecondBacktickDoesNotCommitAgain) {
+  type("su3cl3");
+  press(kBacktick);
+  EXPECT_EQ(committed_, "你好");
+  ASSERT_NE(textTemplateOf(state_.get()), nullptr);
+  press(kBacktick);
+  ASSERT_NE(symbolTableOf(state_.get()), nullptr);
+  EXPECT_EQ(committed_, "你好");
+  // The symbol table is the only thing composed.
+  EXPECT_EQ(symbolTableOf(state_.get())->composingBuffer,
+            symbolTableOf(state_.get())->candidates.front().value);
+}
+
+TEST_F(KeyHandlerSmartTest, TemplatesAreListedAndFiltered) {
+  writeFile(folder_ / "text-templates.txt",
+            "addr\t100 Main Street\nem\tname@example.com\n"
+            "sig\tBest regards,\\nJohn Doe\n");
+  auto store = std::make_shared<SmartLearning::TextTemplateStore>(
+      [] { return 100.0; });
+  store->setFile(folder_ / "text-templates.txt", "");
+  keyHandler_->setTextTemplateStore(store);
+
+  press(kBacktick);
+  auto* textTemplate = textTemplateOf(state_.get());
+  ASSERT_NE(textTemplate, nullptr);
+  EXPECT_EQ(textTemplate->texts,
+            (std::vector<std::string>{"100 Main Street", "name@example.com",
+                                      "Best regards,\nJohn Doe"}));
+  EXPECT_EQ(textTemplate->displayTexts[2], "sig  Best regards,⏎John Doe");
+
+  type("e");
+  textTemplate = textTemplateOf(state_.get());
+  ASSERT_NE(textTemplate, nullptr);
+  EXPECT_EQ(textTemplate->composingBuffer, "[Text Templates] e");
+  // The code "em" starts with it, and "Best regards" contains it.
+  EXPECT_EQ(textTemplate->texts,
+            (std::vector<std::string>{"name@example.com",
+                                      "100 Main Street",
+                                      "Best regards,\nJohn Doe"}));
+
+  // A space is not a part of a code; it goes to the candidate window.
+  EXPECT_FALSE(keyHandler_->handleTextTemplateInput(
+      Key::asciiKey(Key::SPACE), textTemplate,
+      [this](std::unique_ptr<InputState> s) { take(std::move(s)); }, [] {}));
+  // So does Tab.
+  EXPECT_FALSE(keyHandler_->handleTextTemplateInput(
+      Key::asciiKey(Key::TAB), textTemplate,
+      [this](std::unique_ptr<InputState> s) { take(std::move(s)); }, [] {}));
+}
+
+TEST_F(KeyHandlerSmartTest, NumberCodeListsQuickNumbers) {
+  // 2023-09-07 is a Thursday; the year of a date without one comes from the
+  // clock given.
+  std::tm tm{};
+  tm.tm_year = 2023 - 1900;
+  tm.tm_mon = 0;
+  tm.tm_mday = 10;
+  tm.tm_hour = 12;
+  std::time_t now = std::mktime(&tm);
+  keyHandler_->setTextTemplateClock([now] { return now; });
+  press(kBacktick);
+  type("10*15/6");
+  auto* textTemplate = textTemplateOf(state_.get());
+  ASSERT_NE(textTemplate, nullptr);
+  EXPECT_EQ(textTemplate->composingBuffer, "[Quick Numbers] 10*15/6");
+  ASSERT_FALSE(textTemplate->texts.empty());
+  EXPECT_EQ(textTemplate->texts.front(), "25");
+  EXPECT_EQ(textTemplate->displayTexts.front(), "25");
+
+  restart();
+  press(kBacktick);
+  type("9/7");
+  textTemplate = textTemplateOf(state_.get());
+  ASSERT_NE(textTemplate, nullptr);
+  ASSERT_FALSE(textTemplate->texts.empty());
+  EXPECT_EQ(textTemplate->texts.front(), "9月7日（星期四）");
+}
+
+TEST_F(KeyHandlerSmartTest, TemplateCodeIsLimited) {
+  press(kBacktick);
+  type(std::string(51, 'a'));
+  ASSERT_NE(textTemplateOf(state_.get()), nullptr);
+  EXPECT_EQ(textTemplateOf(state_.get())->code.size(), 51u);
+  EXPECT_EQ(errors_, 0);
+  EXPECT_TRUE(pressHandled(Key::asciiKey('a')));
+  EXPECT_EQ(errors_, 1);
+  EXPECT_EQ(textTemplateOf(state_.get())->code.size(), 51u);
+}
+
+TEST_F(KeyHandlerSmartTest, SampleTemplatesAreWrittenOnBacktick) {
+  auto path = folder_ / "text-templates.txt";
+  auto store = std::make_shared<SmartLearning::TextTemplateStore>(
+      [] { return 100.0; });
+  store->setFile(path, "addr\tSample Street\n");
+  keyHandler_->setTextTemplateStore(store);
+  EXPECT_FALSE(std::filesystem::exists(path));
+  press(kBacktick);
+  EXPECT_TRUE(std::filesystem::exists(path));
+  ASSERT_NE(textTemplateOf(state_.get()), nullptr);
+  EXPECT_EQ(textTemplateOf(state_.get())->texts,
+            (std::vector<std::string>{"Sample Street"}));
+}
+
+TEST_F(KeyHandlerSmartTest, BacktickInPlainBopomofoOpensTheSymbolTable) {
+  keyHandler_->setInputMode(InputMode::PlainBopomofo);
+  press(kBacktick);
+  ASSERT_NE(symbolTableOf(state_.get()), nullptr);
+}
+
+TEST_F(KeyHandlerSmartTest, DownAfterPunctuationOpensTheSymbolTable) {
+  type("su3");
+  press(Key::asciiKey('<'));
+  ASSERT_EQ(composingBuffer(), "你，");
+  press(Key::namedKey(Key::KeyName::DOWN));
+  auto* symbolTable = symbolTableOf(state_.get());
+  ASSERT_NE(symbolTable, nullptr);
+  EXPECT_EQ(symbolTable->candidates.front().reading,
+            "_symbols__punctuation_Standard_<");
+  // The symbols of the key come first.
+  EXPECT_EQ(symbolTable->candidates.front().value, "，");
+
+  // Cancelling puts the punctuation back.
+  keyHandler_->candidatePanelPunctuationListCancelled(
+      symbolTable->originalCursor,
+      [this](std::unique_ptr<InputState> s) { take(std::move(s)); });
+  EXPECT_EQ(composingBuffer(), "你，");
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "你，");
+}
+
+TEST_F(KeyHandlerSmartTest, DownAfterPunctuationStartsAtItsSymbolInTheTable) {
+  lm_->setSymbolTable(SmartLearning::ParseSymbolTable(
+      "Marks\t、 。 ， ⭐\nStars\t⭐ ★\n"));
+  type("su3");
+  press(Key::asciiKey('<'));
+  press(Key::namedKey(Key::KeyName::DOWN));
+  auto* symbolTable = symbolTableOf(state_.get());
+  ASSERT_NE(symbolTable, nullptr);
+  EXPECT_EQ(candidateValues(),
+            (std::vector<std::string>{"、", "。", "，", "⭐", "⭐", "★"}));
+  EXPECT_EQ(lm_->getSymbolInitialIndex(symbolTable->candidates[0].reading),
+            2u);
+  selectShownCandidate("★");
+  EXPECT_EQ(composingBuffer(), "你★");
+}
+
+TEST_F(KeyHandlerSmartTest, DownOnAWordDoesNotOpenTheSymbolTable) {
+  type("su3");
+  press(Key::namedKey(Key::KeyName::DOWN));
+  ASSERT_NE(dynamic_cast<InputStates::ChoosingCandidate*>(state_.get()),
+            nullptr);
+  EXPECT_EQ(symbolTableOf(state_.get()), nullptr);
+}
+
+TEST_F(KeyHandlerSmartTest, PunctuationKeyInTheSymbolTableReopensIt) {
+  type("su3");
+  press(kBacktick);
+  press(kBacktick);
+  auto* symbolTable = symbolTableOf(state_.get());
+  ASSERT_NE(symbolTable, nullptr);
+  EXPECT_TRUE(keyHandler_->candidatePanelPunctuationMaybeEntered(
+      Key::asciiKey('<'), symbolTable->originalCursor,
+      [this](std::unique_ptr<InputState> s) { take(std::move(s)); }));
+  symbolTable = symbolTableOf(state_.get());
+  ASSERT_NE(symbolTable, nullptr);
+  EXPECT_EQ(symbolTable->candidates.front().reading,
+            "_symbols__punctuation_list_<");
+  keyHandler_->candidatePanelPunctuationListCancelled(
+      symbolTable->originalCursor,
+      [this](std::unique_ptr<InputState> s) { take(std::move(s)); });
+  EXPECT_TRUE(isEmptyState());
+  EXPECT_EQ(committed_, "你");
+}
+
+TEST_F(KeyHandlerSmartTest, BacktickInTheSymbolTableOpensTheFeatures) {
+  type("su3");
+  press(Key::asciiKey('<'));
+  press(Key::namedKey(Key::KeyName::DOWN));
+  ASSERT_NE(symbolTableOf(state_.get()), nullptr);
+  keyHandler_->candidatePanelFeatureMenuRequested(
+      [this](std::unique_ptr<InputState> s) { take(std::move(s)); });
+  // The rest of the composition is committed without the symbol table.
+  EXPECT_EQ(committed_, "你");
+  EXPECT_NE(dynamic_cast<InputStates::SelectingFeature*>(state_.get()),
+            nullptr);
 }
 
 }  // namespace McBopomofo

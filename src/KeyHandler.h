@@ -24,6 +24,7 @@
 #ifndef SRC_KEYHANDLER_H_
 #define SRC_KEYHANDLER_H_
 
+#include <ctime>
 #include <functional>
 #include <memory>
 #include <set>
@@ -44,6 +45,7 @@
 #include "LearnPhrase.h"
 #include "CommonSentences.h"
 #include "TemporaryPhrases.h"
+#include "TextTemplates.h"
 #include "UserOverrideStore.h"
 
 namespace McBopomofo {
@@ -97,6 +99,15 @@ class KeyHandler {
       Key key, McBopomofo::InputStates::IcuTransformInput* state,
       StateCallback stateCallback, KeyHandler::ErrorCallback errorCallback);
 
+  // The keys typed in the text templates: the code, Backspace, Esc, and the
+  // backtick key for the symbol table. Returns false for the keys left to
+  // the candidate window, such as Enter and the arrow keys. Shift and a
+  // candidate key, but for an operator of a number such as "*", is to be
+  // taken by the candidate window before this is called.
+  bool handleTextTemplateInput(Key key, InputStates::TextTemplate* state,
+                               const StateCallback& stateCallback,
+                               const ErrorCallback& errorCallback);
+
   // Candidate selected. Can assume the context is in a candidate state.
   void candidateSelected(
       const InputStates::ChoosingCandidate::Candidate& candidate,
@@ -115,9 +126,14 @@ class KeyHandler {
                                              StateCallback stateCallback);
 
   /// Candidate panel for punctuation list canceled. Can assume the context is
-  /// in a ChoosingPunctuationList state.
+  /// in a ChoosingPunctuationList state. The punctuation that the symbol
+  /// table replaced is put back.
   void candidatePanelPunctuationListCancelled(size_t originalCursor,
                                               StateCallback stateCallback);
+
+  // The backtick key in the symbol table: the rest of the composition is
+  // committed, and the feature menu is opened.
+  void candidatePanelFeatureMenuRequested(const StateCallback& stateCallback);
 
   // Candidate panel canceled. Can assume the context is in a candidate
   // state.
@@ -277,6 +293,19 @@ class KeyHandler {
   // schedule saving them.
   void setOnCommonSentencesRecorded(std::function<void()> callback) {
     onCommonSentencesRecorded_ = std::move(callback);
+  }
+
+  // The text templates listed after the backtick key. Without the store,
+  // there are only the quick numbers.
+  void setTextTemplateStore(
+      std::shared_ptr<SmartLearning::TextTemplateStore> store) {
+    textTemplateStore_ = std::move(store);
+  }
+
+  // The wall clock for the quick numbers, such as the year of a date typed
+  // without one.
+  void setTextTemplateClock(std::function<std::time_t()> clock) {
+    textTemplateClock_ = std::move(clock);
   }
 
   // Whether the letters typed are being put as English.
@@ -451,6 +480,16 @@ class KeyHandler {
   // into the composition.
   void appendArithmeticResultAfterKey(char charCode,
                                       const StateCallback& stateCallback);
+  // The text templates (or the quick numbers) for the code typed.
+  std::unique_ptr<InputStates::TextTemplate> buildTextTemplateState(
+      const std::string& code);
+  // Puts the reading of the symbol table, such as "_symbols_", at the cursor,
+  // and lists its symbols. Returns false if the language model has none.
+  bool enterSymbolTable(const std::string& key,
+                        const StateCallback& stateCallback);
+  // If the candidate cursor is at a punctuation, replaces it with the symbol
+  // table, starting at the symbols of the same key.
+  bool expandPunctuationToSymbolTable(const StateCallback& stateCallback);
   // Records the English words in the composition about to be committed.
   void learnEnglishWordsFromWalk();
   // Records the sentences in the composition about to be committed.
@@ -504,6 +543,13 @@ class KeyHandler {
   // The rest of a common sentence suggested by the last Inputting state
   // built, taken with Tab.
   std::string sentenceCompletion_;
+  std::shared_ptr<SmartLearning::TextTemplateStore> textTemplateStore_;
+  std::function<std::time_t()> textTemplateClock_ = [] {
+    return std::time(nullptr);
+  };
+  // The punctuation that the symbol table opened with the Down key replaced,
+  // put back if the symbol table is cancelled.
+  std::string readingBeforeSymbolTable_;
   Formosa::Gramambular2::ReadingGrid::WalkResult latestWalk_;
   std::shared_ptr<DictionaryServices> dictionaryServices_;
 
@@ -569,6 +615,10 @@ class KeyHandler {
     virtual std::string pressEscAgainToClearAll() = 0;
     // Reference string: "Tab: {0}", with the rest of a common sentence.
     virtual std::string tabToCompleteSentence(const std::string& rest) = 0;
+    // Reference string: "Text Templates"
+    virtual std::string textTemplatesTitle() = 0;
+    // Reference string: "Quick Numbers"
+    virtual std::string quickNumbersTitle() = 0;
   };
 };
 

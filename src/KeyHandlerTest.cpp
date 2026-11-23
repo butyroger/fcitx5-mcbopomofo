@@ -117,6 +117,8 @@ class MockLocalizedString : public KeyHandler::LocalizedStrings {
   std::string tabToCompleteSentence(const std::string& rest) override {
     return "Tab: " + rest;
   }
+  std::string textTemplatesTitle() override { return "Text Templates"; }
+  std::string quickNumbersTitle() override { return "Quick Numbers"; }
 };
 
 class KeyHandlerTest : public ::testing::Test {
