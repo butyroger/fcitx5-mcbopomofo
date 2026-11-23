@@ -85,4 +85,11 @@ TEST(MixedInputTest, ModeLabels) {
   EXPECT_EQ(WidthModeLabel(false), "全");
 }
 
+TEST(MixedInputTest, SwitchReminderOnlyWhenCapsLockChanges) {
+  EXPECT_FALSE(SwitchReminderText(false, false).has_value());
+  EXPECT_FALSE(SwitchReminderText(true, true).has_value());
+  EXPECT_EQ(SwitchReminderText(false, true), "ABC");
+  EXPECT_EQ(SwitchReminderText(true, false), "中文");
+}
+
 }  // namespace McBopomofo::SmartLearning

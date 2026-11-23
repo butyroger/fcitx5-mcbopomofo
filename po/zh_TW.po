@@ -523,3 +523,15 @@ msgstr "按 ESC 只清除字尾打錯的亂碼，保留最後一個完整的中�
 #: src/McBopomofo.cpp:402
 msgid "Press Esc again to clear all"
 msgstr "再按一次 Esc 清除全部"
+
+#: src/McBopomofo.h
+msgid "Show a reminder when switching between Chinese and English"
+msgstr "中英切換提醒"
+
+#: src/McBopomofo.h
+msgid "Show the Chinese/English mode icon"
+msgstr "中／英模式圖示"
+
+#: src/McBopomofo.h
+msgid "Show the full/half width mode icon"
+msgstr "全／半形模式圖示"

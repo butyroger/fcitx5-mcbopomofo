@@ -189,6 +189,21 @@ FCITX_CONFIGURATION(
         this, "FixEnglishWordCase",
         _("Fix the case of words like iPhone upon a space"), true};
 
+    // Show a reminder ("ABC" or "中文") when Caps Lock switches the mode.
+    fcitx::Option<bool> chineseEnglishSwitchReminderEnabled{
+        this, "ChineseEnglishSwitchReminderEnabled",
+        _("Show a reminder when switching between Chinese and English"), true};
+
+    // Show the Chinese/English mode in the status area.
+    fcitx::Option<bool> showChineseEnglishModeIcon{
+        this, "ShowChineseEnglishModeIcon",
+        _("Show the Chinese/English mode icon"), true};
+
+    // Show the full/half width mode in the status area.
+    fcitx::Option<bool> showFullHalfWidthModeIcon{
+        this, "ShowFullHalfWidthModeIcon",
+        _("Show the full/half width mode icon"), false};
+
     // Allow inputting Chinese when Caps Lock is on.
     fcitx::Option<bool> capsLockAllowChineseInput{
         this, "capsLockAllowChineseInput",
@@ -361,6 +376,13 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   void applyLearningFolder();
   // Resolves the configured user data folder and switches to it.
   void applyUserDataFolder();
+  // Applies the options that take effect on the key handler right away, then
+  // refreshes the mode icons.
+  void applySmartOptions();
+  // Brings the Chinese/English and full/half width actions up to date on
+  // |context|, adding or removing them from the status area per the options.
+  void refreshModeIcons(fcitx::InputContext* context);
+  void updateChineseEnglishIcon(fcitx::InputContext* context);
   void showUserDataFolderWarning();
 
   // (Re)starts the 2-second timer after which the learned choices are saved.
@@ -391,6 +413,8 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
   fcitx::KeyList numpadSelectionKeys_;
 
   std::unique_ptr<fcitx::SimpleAction> halfWidthPunctuationAction_;
+  std::unique_ptr<fcitx::SimpleAction> chineseEnglishModeAction_;
+  bool capsLockOn_ = false;
   std::unique_ptr<fcitx::SimpleAction> associatedPhrasesAction_;
   std::unique_ptr<fcitx::SimpleAction> bopomofoFontAnnotationSupportAction_;
   std::unique_ptr<fcitx::SimpleAction> editUserPhrasesAction_;

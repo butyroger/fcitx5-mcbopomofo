@@ -47,6 +47,7 @@
 #include "Format.h"
 #include "Key.h"
 #include "LearningPaths.h"
+#include "MixedInput.h"
 #include "UserDataFolder.h"
 #include "Log.h"
 #include "UTF8Helper.h"
@@ -525,9 +526,11 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
         keyHandler_->setHalfWidthPunctuationEnabled(enabled);
         fcitx::safeSaveAsIni(config_, kConfigPath);
         halfWidthPunctuationAction_->setShortText(
-            config_.halfWidthPunctuationEnable.value()
-                ? _("Half Width Punctuation")
-                : _("Full Width Punctuation"));
+            config_.showFullHalfWidthModeIcon.value()
+                ? SmartLearning::WidthModeLabel(enabled)
+                : (config_.halfWidthPunctuationEnable.value()
+                       ? _("Half Width Punctuation")
+                       : _("Full Width Punctuation")));
         halfWidthPunctuationAction_->update(context);
 
         if (notifications()) {
@@ -543,6 +546,14 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
       });
   instance_->userInterfaceManager().registerAction(
       "mcbopomofo-half-width-punctuation", halfWidthPunctuationAction_.get());
+
+  chineseEnglishModeAction_ = std::make_unique<fcitx::SimpleAction>();
+  instance_->userInterfaceManager().registerAction(
+      "mcbopomofo-chinese-english-mode", chineseEnglishModeAction_.get());
+  keyHandler_->setOnSmartEnglishModeChanged([this](bool /*unused*/) {
+    // Only the icon follows the smart English mode, with no reminder.
+    updateChineseEnglishIcon(instance_->mostRecentInputContext());
+  });
 
   associatedPhrasesAction_ = std::make_unique<fcitx::SimpleAction>();
   associatedPhrasesAction_->connect<fcitx::SimpleAction::Activated>(
@@ -750,11 +761,58 @@ void McBopomofoEngine::setConfig(const fcitx::RawConfig& config) {
   config_.load(config, true);
   fcitx::safeSaveAsIni(config_, kConfigPath);
   applyUserDataFolder();
+  applySmartOptions();
 }
 
 void McBopomofoEngine::reloadConfig() {
   fcitx::readAsIni(config_, kConfigPath);
   applyUserDataFolder();
+  applySmartOptions();
+}
+
+void McBopomofoEngine::applySmartOptions() {
+  if (!keyHandler_) {
+    return;
+  }
+  keyHandler_->setEscTrimsMistypedText(config_.escTrimsMistypedText.value());
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(
+      config_.smartChineseEnglishSwitchEnabled.value());
+  keyHandler_->setAutoSpaceBetweenChineseAndEnglish(
+      config_.autoSpaceBetweenChineseAndEnglish.value());
+  keyHandler_->setHalfWidthPunctuationAfterEnglish(
+      config_.halfWidthPunctuationAfterEnglish.value());
+  keyHandler_->setFixEnglishWordCase(config_.fixEnglishWordCase.value());
+  if (auto* context = instance_->mostRecentInputContext()) {
+    refreshModeIcons(context);
+  }
+}
+
+void McBopomofoEngine::updateChineseEnglishIcon(
+    fcitx::InputContext* context) {
+  chineseEnglishModeAction_->setShortText(SmartLearning::LanguageModeLabel(
+      capsLockOn_, keyHandler_->isSmartEnglishMode()));
+  if (context != nullptr) {
+    chineseEnglishModeAction_->update(context);
+  }
+}
+
+void McBopomofoEngine::refreshModeIcons(fcitx::InputContext* context) {
+  auto& statusArea = context->statusArea();
+  if (config_.showChineseEnglishModeIcon.value()) {
+    updateChineseEnglishIcon(context);
+    statusArea.addAction(fcitx::StatusGroup::InputMethod,
+                         chineseEnglishModeAction_.get());
+  } else {
+    statusArea.removeAction(chineseEnglishModeAction_.get());
+  }
+
+  bool halfWidth = config_.halfWidthPunctuationEnable.value();
+  halfWidthPunctuationAction_->setShortText(
+      config_.showFullHalfWidthModeIcon.value()
+          ? SmartLearning::WidthModeLabel(halfWidth)
+          : (halfWidth ? _("Half width Punctuation")
+                       : _("Full Width Punctuation")));
+  halfWidthPunctuationAction_->update(context);
 }
 
 void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
@@ -776,12 +834,9 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
                                          action);
   }
 
-  halfWidthPunctuationAction_->setShortText(
-      config_.halfWidthPunctuationEnable.value() ? _("Half width Punctuation")
-                                                 : _("Full Width Punctuation"));
-  halfWidthPunctuationAction_->update(inputContext);
   inputContext->statusArea().addAction(fcitx::StatusGroup::InputMethod,
                                        halfWidthPunctuationAction_.get());
+  refreshModeIcons(inputContext);
 
   associatedPhrasesAction_->setShortText(
       config_.associatedPhrasesEnabled.value() ? _("Associated Phrases - On")
@@ -848,7 +903,6 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
       config_.moveCursorAfterSelection.value());
   keyHandler_->setEscKeyClearsEntireComposingBuffer(
       config_.escKeyClearsEntireComposingBuffer.value());
-  keyHandler_->setEscTrimsMistypedText(config_.escTrimsMistypedText.value());
   keyHandler_->setKeepInvalidSyllableForFurtherInput(
       config_.keepInvalidSyllableForFurtherInput.value());
   keyHandler_->setPutLowercaseLettersToComposingBuffer(
@@ -863,13 +917,7 @@ void McBopomofoEngine::activate(const fcitx::InputMethodEntry& entry,
       config_.repeatedPunctuationToSelectCandidateEnabled.value());
   keyHandler_->setChooseCandidateUsingSpace(
       config_.chooseCandidateUsingSpace.value());
-  keyHandler_->setSmartChineseEnglishSwitchEnabled(
-      config_.smartChineseEnglishSwitchEnabled.value());
-  keyHandler_->setAutoSpaceBetweenChineseAndEnglish(
-      config_.autoSpaceBetweenChineseAndEnglish.value());
-  keyHandler_->setHalfWidthPunctuationAfterEnglish(
-      config_.halfWidthPunctuationAfterEnglish.value());
-  keyHandler_->setFixEnglishWordCase(config_.fixEnglishWordCase.value());
+  applySmartOptions();
 
   if (mode == McBopomofo::InputMode::McBopomofo) {
     // Font annotation is only supported in McBopomofo, not Plain McBopomofo.
@@ -948,6 +996,22 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
     return;
   }
 
+  // The Caps Lock state only exists in the raw key. Whatever key event
+  // arrives tells whether it changed.
+  bool capsLockNow = keyEvent.rawKey().states() & fcitx::KeyState::CapsLock;
+  if (capsLockNow != capsLockOn_) {
+    auto reminder = SmartLearning::SwitchReminderText(capsLockOn_, capsLockNow);
+    capsLockOn_ = capsLockNow;
+    updateChineseEnglishIcon(keyEvent.inputContext());
+    if (reminder && config_.chineseEnglishSwitchReminderEnabled.value() &&
+        notifications()) {
+      notifications()->call<fcitx::INotifications::showTip>(
+          "mcbopomofo-chinese-english-switch", _("McBopomofo"),
+          "fcitx_mcbopomofo", *reminder, *reminder,
+          kFcitx5NotificationTimeoutInMs);
+    }
+  }
+
   if (keyEvent.isRelease()) {
     return;
   }
@@ -958,6 +1022,7 @@ void McBopomofoEngine::keyEvent(const fcitx::InputMethodEntry& /*unused*/,
 
   if (key.states() & fcitx::KeyState::Alt ||
       key.states() & fcitx::KeyState::Super) {
+    keyHandler_->breakEscDoublePress();
     return;
   }
 

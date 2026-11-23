@@ -145,6 +145,13 @@ std::string LanguageModeLabel(bool capsLockOn, bool smartEnglish) {
   return (capsLockOn || smartEnglish) ? "英" : "中";
 }
 
+std::optional<std::string> SwitchReminderText(bool previous, bool current) {
+  if (previous == current) {
+    return std::nullopt;
+  }
+  return current ? "ABC" : "中文";
+}
+
 std::string WidthModeLabel(bool halfWidth) { return halfWidth ? "半" : "全"; }
 
 }  // namespace McBopomofo::SmartLearning

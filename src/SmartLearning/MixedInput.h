@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -52,6 +53,11 @@ size_t PlanTrimBeforeCursor(
 
 // "英" when Caps Lock is on or the smart English mode is active, else "中".
 std::string LanguageModeLabel(bool capsLockOn, bool smartEnglish);
+
+// The reminder to show when the Caps Lock state goes from |previous| to
+// |current|: "ABC" when it turns on, "中文" when it turns off, nothing when it
+// did not change.
+std::optional<std::string> SwitchReminderText(bool previous, bool current);
 
 // "半" for half width, else "全".
 std::string WidthModeLabel(bool halfWidth);

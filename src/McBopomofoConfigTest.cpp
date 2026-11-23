@@ -47,6 +47,11 @@ TEST(McBopomofoConfigTest, DefaultsMatchTheMacSetup) {
   EXPECT_TRUE(c.smartChineseEnglishSwitchEnabled.value());
   EXPECT_TRUE(c.autoSpaceBetweenChineseAndEnglish.value());
   EXPECT_TRUE(c.fixEnglishWordCase.value());
+  EXPECT_TRUE(c.halfWidthPunctuationAfterEnglish.value());
+  EXPECT_TRUE(c.escTrimsMistypedText.value());
+  EXPECT_TRUE(c.chineseEnglishSwitchReminderEnabled.value());
+  EXPECT_TRUE(c.showChineseEnglishModeIcon.value());
+  EXPECT_FALSE(c.showFullHalfWidthModeIcon.value());
 }
 
 }  // namespace McBopomofo
