@@ -58,7 +58,7 @@ TEST(UserOverrideModelTest, BasicOperation) {
   ASSERT_TRUE(v.empty());
 }
 
-TEST(UserOverrideModelTest, FreshVsFrequent) {
+TEST(UserOverrideModelTest, NewestChoiceWins) {
   UserOverrideModel uom(kCapacity, kHalflife);
   std::string key = "abc";
   std::string olderValue = "older";
@@ -67,30 +67,26 @@ TEST(UserOverrideModelTest, FreshVsFrequent) {
   uom.observe(key, olderValue, kFakeNow);
   uom.observe(key, olderValue, kFakeNow + kHalflife * 1);
   uom.observe(key, olderValue, kFakeNow + kHalflife * 2);
-  uom.observe(key, olderValue, kFakeNow + kHalflife * 3);
-  uom.observe(key, olderValue, kFakeNow + kHalflife * 4);
-  uom.observe(key, newerValue, kFakeNow + kHalflife * 5);
-  uom.observe(key, newerValue, kFakeNow + kHalflife * 5.25);
 
-  // Even if newerValue is more recent, olderValue is used more frequently,
-  // and so initially olderValue is still suggested.
-  auto v = uom.suggest(key, kFakeNow + kHalflife * 7);
-  ASSERT_EQ(v.candidate, olderValue);
-  v = uom.suggest(key, kFakeNow + kHalflife * 20);
-  ASSERT_EQ(v.candidate, olderValue);
-  v = uom.suggest(key, kFakeNow + kHalflife * 22);
+  auto v = uom.suggest(key, kFakeNow + kHalflife * 3);
   ASSERT_EQ(v.candidate, olderValue);
 
-  // At this point, even if olderValue hasn't expired yet, but the
-  // less-frequently observed newerValue is fresher.
-  uom.observe(key, newerValue, kFakeNow + kHalflife * 23);
-  v = uom.suggest(key, kFakeNow + kHalflife * 23.5);
+  // Even if olderValue is used more frequently, choosing newerValue once
+  // corrects the suggestion.
+  uom.observe(key, newerValue, kFakeNow + kHalflife * 4);
+  v = uom.suggest(key, kFakeNow + kHalflife * 4);
   ASSERT_EQ(v.candidate, newerValue);
+
+  // And choosing olderValue again switches it back.
+  uom.observe(key, olderValue, kFakeNow + kHalflife * 5);
+  v = uom.suggest(key, kFakeNow + kHalflife * 5);
+  ASSERT_EQ(v.candidate, olderValue);
 
   v = uom.suggest(key, kFakeNow + kHalflife * 25);
-  ASSERT_EQ(v.candidate, newerValue);
+  ASSERT_EQ(v.candidate, olderValue);
 
-  v = uom.suggest(key, kFakeNow + kHalflife * 45);
+  // Everything has decayed.
+  v = uom.suggest(key, kFakeNow + kHalflife * 26);
   ASSERT_TRUE(v.empty());
 }
 
@@ -162,6 +158,124 @@ class SimpleLM : public Formosa::Gramambular2::LanguageModel {
  protected:
   std::map<std::string, std::vector<Unigram>> db_;
 };
+
+TEST(UserOverrideModelTest, SerializeAndDeserialize) {
+  UserOverrideModel uom(kCapacity, kHalflife);
+  uom.observe("a", "1", kFakeNow);
+  uom.observe("b", "2", kFakeNow + 1, true);
+  uom.observe("b", "3", kFakeNow + 2);
+  uom.observe("b", "3", kFakeNow + 3);
+  uom.observe("c", "4", kFakeNow + 4);
+
+  UserOverrideModel restored(kCapacity, kHalflife);
+  ASSERT_EQ(restored.deserialize(uom.serialize()), 4);
+  ASSERT_EQ(restored.serialize(), uom.serialize());
+
+  ASSERT_EQ(restored.suggest("a", kFakeNow).candidate, "1");
+  ASSERT_EQ(restored.suggest("b", kFakeNow + 3).candidate, "3");
+  ASSERT_EQ(restored.suggest("c", kFakeNow + 4).candidate, "4");
+  ASSERT_EQ(restored.candidateObservationCount("3"), 2);
+  ASSERT_EQ(restored.candidateObservationCount("2"), 1);
+  ASSERT_EQ(restored.candidateObservationCount("x"), 0);
+
+  // The LRU order is preserved: "a" is the least recently used one.
+  restored.observe("d", "5", kFakeNow + 5);
+  restored.observe("e", "6", kFakeNow + 6);
+  restored.observe("f", "7", kFakeNow + 7);
+  ASSERT_TRUE(restored.suggest("a", kFakeNow + 7).empty());
+  ASSERT_EQ(restored.suggest("b", kFakeNow + 7).candidate, "3");
+}
+
+TEST(UserOverrideModelTest, DeserializeSkipsMalformedLines) {
+  UserOverrideModel uom(kCapacity, kHalflife);
+  uom.observe("old", "x", kFakeNow);
+  std::string text =
+      "a\t1\t2\t1657772432\t0\n"
+      "bad line\n"
+      "b\t2\tnot-a-number\t1657772432\t0\n"
+      "c\t3\t1\t1657772432\n"
+      "\n"
+      "d\t\xe5\xad\x97\xe5\xbd\x99\t1\t1657772432\t1";
+  ASSERT_EQ(uom.deserialize(text), 2);
+  ASSERT_TRUE(uom.suggest("old", kFakeNow).empty());
+  ASSERT_EQ(uom.suggest("a", kFakeNow).candidate, "1");
+  auto s = uom.suggest("d", kFakeNow);
+  ASSERT_EQ(s.candidate, "\xe5\xad\x97\xe5\xbd\x99");
+  ASSERT_TRUE(s.forceHighScoreOverride);
+}
+
+TEST(UserOverrideModelTest, DeserializeAppendMergesCounts) {
+  UserOverrideModel deviceA(kCapacity, kHalflife);
+  deviceA.observe("a", "1", kFakeNow);
+  deviceA.observe("a", "1", kFakeNow + 1);
+  deviceA.observe("b", "2", kFakeNow + 2);
+
+  UserOverrideModel deviceB(kCapacity, kHalflife);
+  deviceB.observe("a", "1", kFakeNow + 3);
+  deviceB.observe("a", "9", kFakeNow + 4);
+  deviceB.observe("c", "3", kFakeNow + 5);
+
+  UserOverrideModel merged(kCapacity, kHalflife);
+  merged.deserialize(deviceA.serialize());
+  merged.deserialize(deviceB.serialize(), true);
+
+  ASSERT_EQ(merged.candidateObservationCount("1"), 3);
+  ASSERT_EQ(merged.candidateObservationCount("9"), 1);
+  // "1" was picked 3 times for "a", but the latest choice on any device wins.
+  ASSERT_EQ(merged.suggest("a", kFakeNow + 4).candidate, "9");
+  ASSERT_EQ(merged.suggest("b", kFakeNow + 4).candidate, "2");
+  ASSERT_EQ(merged.suggest("c", kFakeNow + 5).candidate, "3");
+
+  // Without append, the existing observations are replaced.
+  merged.deserialize(deviceB.serialize());
+  ASSERT_TRUE(merged.suggest("b", kFakeNow + 4).empty());
+}
+
+TEST(UserOverrideModelTest, DeserializeRespectsCapacity) {
+  UserOverrideModel uom(2, kHalflife);
+  ASSERT_EQ(uom.deserialize("a\t1\t1\t1657772432\t0\n"
+                            "b\t2\t1\t1657772432\t0\n"
+                            "c\t3\t1\t1657772432\t0\n"),
+            3);
+  ASSERT_TRUE(uom.suggest("a", kFakeNow).empty());
+  ASSERT_EQ(uom.suggest("b", kFakeNow).candidate, "2");
+  ASSERT_EQ(uom.suggest("c", kFakeNow).candidate, "3");
+}
+
+TEST(UserOverrideModelTest, ObservationCountOfBrokenUpPhrase) {
+  // 許是 wins over 許 + 是, and the user keeps picking 氏 to break it up.
+  std::string data =
+      "ㄒㄩˇ 許 -3.0\n"
+      "ㄕˋ 是 -2.0\n"
+      "ㄕˋ 氏 -4.0\n"
+      "ㄒㄩˇ-ㄕˋ 許是 -4.0\n";
+  Formosa::Gramambular2::ReadingGrid grid(
+      std::make_shared<SimpleLM>(data.c_str()));
+  UserOverrideModel uom(kCapacity, kHalflife);
+  double timestamp = kFakeNow;
+
+  for (size_t i = 1; i <= 2; i++) {
+    grid.clear();
+    grid.insertReading("ㄒㄩˇ");
+    grid.insertReading("ㄕˋ");
+    auto walkBefore = grid.walk();
+    ASSERT_EQ(walkBefore.valuesAsStrings(), (std::vector<std::string>{"許是"}));
+    grid.overrideCandidate(1, "氏");
+    auto walkAfter = grid.walk();
+    ASSERT_EQ(walkAfter.valuesAsStrings(),
+              (std::vector<std::string>{"許", "氏"}));
+    uom.observe(walkBefore, walkAfter, 1, timestamp);
+    timestamp += 1.0;
+    ASSERT_EQ(uom.observationCount(walkAfter, 1, "氏"), i);
+    ASSERT_EQ(uom.observationCount(walkAfter, 1, "是"), 0);
+
+    // The phrase comes back on the next walk, so no suggestion matches.
+    grid.clear();
+    grid.insertReading("ㄒㄩˇ");
+    grid.insertReading("ㄕˋ");
+    ASSERT_TRUE(uom.suggest(grid.walk(), 1, timestamp).empty());
+  }
+}
 
 TEST(UserOverrideModelTest, WalkResultSnapshotTest) {
   // See https://github.com/openvanilla/McBopomofo/issues/885.

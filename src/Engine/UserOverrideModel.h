@@ -62,6 +62,29 @@ class UserOverrideModel {
 
   Suggestion suggest(const std::string& key, double timestamp);
 
+  // Returns the total number of times the user has picked the candidate,
+  // across all observed contexts.
+  [[nodiscard]] size_t candidateObservationCount(
+      const std::string& candidate) const;
+
+  // Returns the number of times the user has picked the candidate for the
+  // node at the cursor of the walk, in the context of the nodes before it.
+  [[nodiscard]] size_t observationCount(
+      const Formosa::Gramambular2::ReadingGrid::WalkResult& walk,
+      size_t cursor, const std::string& candidate) const;
+
+  // Serializes all observations into a tab-separated text, from the least
+  // recently used to the most recently used. Each line is:
+  // key<TAB>candidate<TAB>count<TAB>timestamp<TAB>forceHighScoreOverride
+  [[nodiscard]] std::string serialize() const;
+
+  // Loads the observations in the serialized text. Unless append is true, all
+  // existing observations are removed first. When appending, the counts of
+  // the same key and candidate are added up, which is how the observations
+  // from different devices are merged. Malformed lines are skipped. Returns
+  // the number of loaded overrides.
+  size_t deserialize(const std::string& text, bool append = false);
+
  private:
   struct Override {
     size_t count = 0;
