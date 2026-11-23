@@ -362,9 +362,19 @@ im-config -n fcitx5</pre>
   <li>切換時，正在組字的內容會先送出。</li>
   <li>已勾選的程式列在偏好設定「使用浮動組字窗的程式」，也可以在那裡刪除。</li>
   <li>組字列和候選字在同一個面板，面板在游標下方；組字列和候選字使用同一個字型大小。</li>
-  <li>有些程式沒有回報程式名稱（例如部分 Wayland 原生程式），這時選單不會出現這一項。同一個瀏覽器用不同方式啟動時，回報的名稱可能不同。</li>
+  <li>同一個瀏覽器用不同方式啟動時，回報的名稱可能不同。</li>
 </ul>
-<p class="note">fcitx 本身也有全域的「切換內嵌預編輯區域」快速鍵（預設 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>），切換是否在程式內顯示組字；本功能只影響勾選的程式。</p>
+<h3>選單沒有出現這一項時</h3>
+<p>這個功能要知道是哪個程式，而 GTK、Qt 程式只有透過 fcitx 自己的輸入模組連線時才會回報程式名稱。沒有回報名稱的程式（部分 Wayland 原生程式也是）不會出現這一項，打字照常，只是不能使用浮動組字窗。</p>
+<ol>
+  <li>在終端機執行 <code>echo $GTK_IM_MODULE $QT_IM_MODULE</code>。如果顯示的不是 <code>fcitx fcitx</code>（例如是空白），程式就沒有使用 fcitx 的模組，不會回報名稱。<code>fcitx5-diagnose</code> 的輸出也會看到這種程式的程式名稱是空的。</li>
+  <li>在 <code>~/.xprofile</code> 加入下面兩行（要所有使用者都生效，改在 <code>/etc/environment</code> 加入 <code>GTK_IM_MODULE=fcitx</code> 與 <code>QT_IM_MODULE=fcitx</code>）：
+<pre>export GTK_IM_MODULE=fcitx
+export QT_IM_MODULE=fcitx</pre></li>
+  <li>登出再登入，之後新開的程式就會回報名稱。GTK、Qt 的 fcitx 模組（<code>fcitx5-frontend-gtk3</code>、<code>fcitx5-frontend-gtk4</code>、<code>fcitx5-frontend-qt6</code>）需已安裝，一般安裝 fcitx5 時會一起裝好。</li>
+</ol>
+<p>不想改環境變數，或程式仍沒有回報名稱時，可以改用 fcitx 本身的「切換內嵌預編輯區域」快速鍵（預設 <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>，可在「Fcitx 5 設定」→「全域選項」查看或更改）：在出問題的輸入框按一下，組字就不在程式內顯示、改在 fcitx 面板上。這個快速鍵只對目前的輸入框有效，不需要程式名稱。</p>
+<p class="note">「切換內嵌預編輯區域」是 fcitx 自己的設定；浮動組字窗只影響勾選的程式，不會改變它。</p>
 </section>
 
 <section id="mode">
