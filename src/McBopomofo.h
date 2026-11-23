@@ -106,18 +106,18 @@ FCITX_CONFIGURATION(
                                 BopomofoKeyboardLayoutI18NAnnotation>
         bopomofoKeyboardLayout{this, "BopomofoKeyboardLayout",
                                _("Bopomofo Keyboard Layout"),
-                               BopomofoKeyboardLayout::Standard};
+                               BopomofoKeyboardLayout::Hsu};
 
     // Candidate layout.
     fcitx::OptionWithAnnotation<CandidateLayoutHint,
                                 CandidateLayoutHintI18NAnnotation>
         candidateLayout{this, "CandidateLayout", _("Candidate List Layout"),
-                        CandidateLayoutHint::NotSet};
+                        CandidateLayoutHint::Vertical};
 
     // Select selection keys.
     fcitx::OptionWithAnnotation<SelectionKeys, SelectionKeysI18NAnnotation>
         selectionKeys{this, "SelectionKeys", _("Selection Keys"),
-                      SelectionKeys::Key_123456789};
+                      SelectionKeys::Key_asdfghjkl};
 
     // Select count of selection keys.
     fcitx::Option<int, fcitx::IntConstrain> selectionKeysCount{
@@ -137,7 +137,7 @@ FCITX_CONFIGURATION(
     // Move the cursor at the end of the selected candidate phrase.
     fcitx::Option<bool> moveCursorAfterSelection{
         this, "MoveCursorAfterSelection", _("Move cursor after selection"),
-        false};
+        true};
 
     // This defines an option with annotation for MovingCursorOption
     // enumeration, which configures the cursor behavior when typing in
@@ -152,7 +152,7 @@ FCITX_CONFIGURATION(
     // ESC key clears entire composing buffer.
     fcitx::Option<bool> escKeyClearsEntireComposingBuffer{
         this, "EscKeyClearsEntireComposingBuffer",
-        _("ESC key clears entire composing buffer"), false};
+        _("ESC key clears entire composing buffer"), true};
 
     // Keep an uncomposable reading editable; a new Bopomofo component replaces
     // its existing tone marker so the user can continue the reading.
@@ -179,13 +179,13 @@ FCITX_CONFIGURATION(
     // Repeated punctuation to select next candidate.
     fcitx::Option<bool> repeatedPunctuationToSelectCandidateEnabled{
         this, "RepeatedPunctuationToSelectCandidateEnabled",
-        _("Repeated punctuation to select next candidate"), false};
+        _("Repeated punctuation to select next candidate"), true};
 
     // Ctrl + enter keys.
     fcitx::OptionWithAnnotation<KeyHandlerCtrlEnter,
                                 KeyHandlerCtrlEnterI18NAnnotation>
         ctrlEnterKeys{this, "KeyHandlerCtrlEnter", _("Control + Enter Key"),
-                      KeyHandlerCtrlEnter::Disabled};
+                      KeyHandlerCtrlEnter::OutputBpmfReadings};
 
     // Whether to show "Turn On/Off Bopomofo Font Annotation Support" in the
     // menu.
