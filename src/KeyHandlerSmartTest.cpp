@@ -1546,4 +1546,118 @@ TEST_F(KeyHandlerSmartTest, BacktickInTheSymbolTableOpensTheFeatures) {
             nullptr);
 }
 
+// Digits in the composition with the Hsu keyboard, and symbols for keys
+// without a punctuation.
+
+namespace {
+
+// 你 with the Hsu keyboard.
+const std::string kHsuNi =
+    KeysForSyllables(BopomofoKeyboardLayout::HsuLayout(), {"ㄋㄧˇ"});
+
+}  // namespace
+
+TEST_F(KeyHandlerSmartTest, HsuDigitsGoIntoTheComposition) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  type(kHsuNi + "2026");
+  EXPECT_EQ(composingBuffer(), "你2026");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "你2026");
+
+  // The same with the smart switching turned off.
+  restart();
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
+  type(kHsuNi + "2026");
+  EXPECT_EQ(composingBuffer(), "你2026");
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "你2026");
+}
+
+TEST_F(KeyHandlerSmartTest, HsuDigitsKeepTheChineseAfterThem) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  type(kHsuNi + "3" + kHsuNi);
+  EXPECT_EQ(composingBuffer(), "你3你");
+}
+
+TEST_F(KeyHandlerSmartTest, HsuDigitWithNothingComposedGoesToTheApp) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  EXPECT_FALSE(pressHandled(Key::asciiKey('1')));
+  EXPECT_TRUE(isEmptyState());
+  EXPECT_EQ(errors_, 0);
+}
+
+TEST_F(KeyHandlerSmartTest, HsuDigitAfterAnUnfinishedReadingBeeps) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
+  type(kHsuNi + "n");
+  std::string before = composingBuffer();
+  EXPECT_TRUE(pressHandled(Key::asciiKey('2')));
+  EXPECT_EQ(errors_, 1);
+  EXPECT_EQ(composingBuffer(), before);
+}
+
+TEST_F(KeyHandlerSmartTest, HsuSymbolWithoutPunctuationIsFullWidthAfterChinese) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  type(kHsuNi + "/");
+  EXPECT_EQ(composingBuffer(), "你／");
+
+  // With nothing composed, the symbol starts the composition.
+  restart();
+  EXPECT_TRUE(pressHandled(Key::asciiKey('/')));
+  EXPECT_EQ(composingBuffer(), "／");
+
+  // Half width when the half-width punctuation is turned on.
+  restart();
+  keyHandler_->setHalfWidthPunctuationEnabled(true);
+  type(kHsuNi + "/");
+  EXPECT_EQ(composingBuffer(), "你/");
+}
+
+TEST_F(KeyHandlerSmartTest, HsuSymbolWithoutPunctuationIsHalfWidthAfterDigits) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  type(kHsuNi + "10/");
+  EXPECT_EQ(composingBuffer(), "你10/");
+
+  restart();
+  keyHandler_->setHalfWidthPunctuationAfterEnglish(false);
+  type(kHsuNi + "10/");
+  EXPECT_EQ(composingBuffer(), "你10／");
+}
+
+TEST_F(KeyHandlerSmartTest, HsuEqualsPutsTheResultOfTheExpression) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  type(kHsuNi + "10/2=");
+  EXPECT_EQ(composingBuffer(), "你10/2=5");
+
+  restart();
+  type(kHsuNi + "3.5*2=");
+  EXPECT_EQ(composingBuffer(), "你3.5*2=7");
+
+  // Full width after the digits too, as in the user guide.
+  restart();
+  keyHandler_->setHalfWidthPunctuationAfterEnglish(false);
+  type(kHsuNi + "10/2=");
+  EXPECT_EQ(composingBuffer(), "你10／2＝5");
+
+  restart();
+  type(kHsuNi + "3.5*2=");
+  EXPECT_EQ(composingBuffer(), "你3。5＊2＝7");
+
+  restart();
+  type("(2+3)*3=");
+  EXPECT_EQ(composingBuffer(), "（2＋3）＊3＝15");
+}
+
+TEST_F(KeyHandlerSmartTest, HsuEqualsAfterADivisionByZeroIsJustTyped) {
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  type(kHsuNi + "5/0+1=");
+  EXPECT_EQ(composingBuffer(), "你5/0+1=");
+
+  restart();
+  keyHandler_->setHalfWidthPunctuationAfterEnglish(false);
+  type(kHsuNi + "5/0+1=");
+  EXPECT_EQ(composingBuffer(), "你5／0＋1＝");
+}
+
 }  // namespace McBopomofo

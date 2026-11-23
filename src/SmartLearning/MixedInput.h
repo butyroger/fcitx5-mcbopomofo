@@ -79,6 +79,10 @@ std::optional<std::string> SwitchReminderText(bool known, bool previous,
 // "半" for half width, else "全".
 std::string WidthModeLabel(bool halfWidth);
 
+// The full-width form (U+FF01 to U+FF5E) of a printable ASCII character other
+// than the space, in UTF-8, such as "／" for "/". Other characters are kept.
+std::string FullWidthSymbol(char c);
+
 }  // namespace McBopomofo::SmartLearning
 
 #endif  // SRC_SMARTLEARNING_MIXEDINPUT_H_

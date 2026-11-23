@@ -135,4 +135,15 @@ TEST(MixedInputTest, EnglishCompletionPlan) {
   EXPECT_EQ(plan->englishReading, "_english_ab");
 }
 
+TEST(MixedInputTest, FullWidthSymbol) {
+  EXPECT_EQ(FullWidthSymbol('/'), "／");
+  EXPECT_EQ(FullWidthSymbol('!'), "！");
+  EXPECT_EQ(FullWidthSymbol('~'), "～");
+  EXPECT_EQ(FullWidthSymbol('='), "＝");
+  EXPECT_EQ(FullWidthSymbol('a'), "ａ");
+  // Outside the printable range, the character is kept.
+  EXPECT_EQ(FullWidthSymbol(' '), " ");
+  EXPECT_EQ(FullWidthSymbol('\t'), "\t");
+}
+
 }  // namespace McBopomofo::SmartLearning

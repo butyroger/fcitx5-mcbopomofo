@@ -165,4 +165,18 @@ std::optional<std::string> SwitchReminderText(bool known, bool previous,
 
 std::string WidthModeLabel(bool halfWidth) { return halfWidth ? "半" : "全"; }
 
+std::string FullWidthSymbol(char c) {
+  auto code = static_cast<unsigned char>(c);
+  if (code <= 0x20 || code >= 0x7F) {
+    return std::string(1, c);
+  }
+  // U+FF01 to U+FF5E, three bytes in UTF-8.
+  unsigned int full = code + 0xFEE0;
+  std::string out;
+  out += static_cast<char>(0xE0 | (full >> 12));
+  out += static_cast<char>(0x80 | ((full >> 6) & 0x3F));
+  out += static_cast<char>(0x80 | (full & 0x3F));
+  return out;
+}
+
 }  // namespace McBopomofo::SmartLearning

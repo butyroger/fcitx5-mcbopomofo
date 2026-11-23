@@ -662,6 +662,31 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
     }
   }
 
+  // In a layout that does not use digits for Bopomofo, such as Hsu, a digit
+  // is put into the composition, so that Chinese and digits can be typed
+  // together without committing first. The digits on the number pad are
+  // handled below.
+  if (charCode >= '0' && charCode <= '9' && !key.ctrlPressed &&
+      !key.isFromNumberPad && maybeNotEmptyState != nullptr) {
+    std::string reading = kNumPadPrefix + std::string(1, charCode);
+    if (lm_->hasUnigrams(reading)) {
+      if (!reading_.isEmpty()) {
+        errorCallback();
+        stateCallback(buildInputtingState());
+        return true;
+      }
+      grid_.insertReading(reading);
+      // Keep the half-width digit, not the full-width one.
+      grid_.overrideCandidate(
+          grid_.cursor() - 1,
+          Formosa::Gramambular2::ReadingGrid::Candidate(
+              reading, std::string(1, charCode)));
+      walk();
+      stateCallback(buildInputtingState());
+      return true;
+    }
+  }
+
   if (key.ascii != 0 && !key.isFromNumberPad) {
     std::string chrStr(1, key.ascii);
     std::string unigram;
@@ -741,6 +766,23 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       }
       return true;
     }
+  }
+
+  // A symbol key without a punctuation, such as "/" in the Hsu layout, puts
+  // the symbol itself, so that an expression like 10／2＝ can be typed.
+  if (inputMode_ == InputMode::McBopomofo && reading_.isEmpty() &&
+      uCharCode > 0x20 && uCharCode < 0x7F && !isalnum(uCharCode) &&
+      !key.ctrlPressed && !key.isFromNumberPad &&
+      (maybeNotEmptyState != nullptr ||
+       dynamic_cast<InputStates::Empty*>(state) != nullptr)) {
+    std::string symbol =
+        (halfWidthPunctuationEnabled_ || isAfterHalfWidthAlphanumeric())
+            ? std::string(1, charCode)
+            : SmartLearning::FullWidthSymbol(charCode);
+    insertLiteralText(symbol);
+    stateCallback(buildInputtingState());
+    appendArithmeticResultAfterKey(charCode, stateCallback);
+    return true;
   }
 
   if (key.ascii != 0 && key.isFromNumberPad && maybeNotEmptyState != nullptr) {
