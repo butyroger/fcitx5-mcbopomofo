@@ -7,6 +7,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
 add_library(SmartLearningLib
         AtomicFile.h
         AtomicFile.cpp
+        BopomofoKeys.h
+        BopomofoKeys.cpp
         EnglishWords.h
         EnglishWords.cpp
         LearningPaths.h
@@ -20,13 +22,14 @@ add_library(SmartLearningLib
 target_include_directories(SmartLearningLib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/../Engine)
-target_link_libraries(SmartLearningLib PUBLIC McBopomofoLMLib gramambular2_lib)
+target_link_libraries(SmartLearningLib PUBLIC McBopomofoLMLib gramambular2_lib MandarinLib)
 
 if (ENABLE_TEST)
         enable_testing()
 
         add_executable(SmartLearningLibTest
                 AtomicFileTest.cpp
+                BopomofoKeysTest.cpp
                 EnglishWordsTest.cpp
                 LearningPathsTest.cpp
                 MixedInputTest.cpp
