@@ -1198,4 +1198,19 @@ TEST_F(KeyHandlerSmartTest, NoSentencesWhenTurnedOff) {
   EXPECT_EQ(tooltip(), "");
 }
 
+// A division by zero anywhere gives no result, not the result of a shorter
+// expression at the end, such as the (1-1) here.
+TEST_F(KeyHandlerSmartTest, EqualsAfterADivisionByZeroIsJustTyped) {
+  type("5/0+1=");
+  EXPECT_EQ(composingBuffer(), "5/0+1=");
+
+  restart();
+  type("(1+1)/(1-1)=");
+  EXPECT_EQ(composingBuffer(), "（1+1)/(1-1)＝");
+
+  restart();
+  type("(5/0+1)=");
+  EXPECT_EQ(composingBuffer(), "（5/0+1)＝");
+}
+
 }  // namespace McBopomofo

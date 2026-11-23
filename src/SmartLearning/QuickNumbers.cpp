@@ -438,9 +438,18 @@ std::optional<double> ParseNumber(std::string_view text) {
 // expression = term (('+' | '-') term)*
 // term       = factor (('*' | '/') factor)*
 // factor     = '-' factor | '(' expression ')' | number
+//
+// Nesting deeper than kMaxDepth (by "(" or a unary "-") gives no result, so
+// that a long run of them cannot use up the stack.
 class Parser {
  public:
+  static constexpr int kMaxDepth = 64;
+
   explicit Parser(std::string_view text) : text_(text) {}
+
+  // Whether the text tried to divide by zero, or nests too deeply; either
+  // way there is no result at all.
+  bool aborted() const { return dividedByZero_ || tooDeep_; }
 
   std::optional<double> parse() {
     auto value = expression();
@@ -479,6 +488,7 @@ class Parser {
         return std::nullopt;
       }
       if (op == '/' && *rhs == 0) {
+        dividedByZero_ = true;
         return std::nullopt;
       }
       *value = op == '*' ? *value * *rhs : *value / *rhs;
@@ -490,9 +500,17 @@ class Parser {
     if (index_ >= text_.size()) {
       return std::nullopt;
     }
+    if (text_[index_] == '-' || text_[index_] == '(') {
+      if (depth_ >= kMaxDepth) {
+        tooDeep_ = true;
+        return std::nullopt;
+      }
+    }
     if (text_[index_] == '-') {
       index_++;
+      depth_++;
       auto value = factor();
+      depth_--;
       if (!value) {
         return std::nullopt;
       }
@@ -500,7 +518,9 @@ class Parser {
     }
     if (text_[index_] == '(') {
       index_++;
+      depth_++;
       auto value = expression();
+      depth_--;
       if (!value || index_ >= text_.size() || text_[index_] != ')') {
         return std::nullopt;
       }
@@ -517,7 +537,24 @@ class Parser {
 
   std::string_view text_;
   size_t index_ = 0;
+  int depth_ = 0;
+  bool dividedByZero_ = false;
+  bool tooDeep_ = false;
 };
+
+// EvaluateArithmetic, also telling whether the text divided by zero or
+// nested too deeply.
+std::optional<double> Evaluate(const std::string& expression, bool* aborted) {
+  *aborted = false;
+  // At least one operator, or it is just a number.
+  if (expression.find_first_of("+-*/") == std::string::npos) {
+    return std::nullopt;
+  }
+  Parser parser(expression);
+  auto value = parser.parse();
+  *aborted = parser.aborted();
+  return value;
+}
 
 }  // namespace
 
@@ -586,9 +623,16 @@ std::optional<std::string> ArithmeticResult(
     }
     start--;
   }
-  // The longest expression that makes sense, such as 2+3 in "(2+3".
+  // The longest expression that makes sense, such as 2+3 in "(2+3". A
+  // division by zero gives no result at all, so that "5/0+1" is not answered
+  // with the 1 at its end.
   for (size_t i = start; i < characters.size(); i++) {
-    if (auto value = EvaluateArithmetic(Join(characters, i))) {
+    bool aborted = false;
+    auto value = Evaluate(Join(characters, i), &aborted);
+    if (aborted) {
+      return std::nullopt;
+    }
+    if (value.has_value()) {
       return Formatted(*value);
     }
   }
@@ -596,11 +640,8 @@ std::optional<std::string> ArithmeticResult(
 }
 
 std::optional<double> EvaluateArithmetic(const std::string& expression) {
-  // At least one operator, or it is just a number.
-  if (expression.find_first_of("+-*/") == std::string::npos) {
-    return std::nullopt;
-  }
-  return Parser(expression).parse();
+  bool aborted = false;
+  return Evaluate(expression, &aborted);
 }
 
 }  // namespace McBopomofo::SmartLearning

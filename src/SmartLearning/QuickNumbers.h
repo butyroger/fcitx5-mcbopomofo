@@ -28,13 +28,16 @@ std::vector<std::string> QuickNumberCandidates(const std::string& code,
 
 // The result of the arithmetic expression at the end of the text before the
 // "=" just typed, such as "15" for "我算（2＋3）＊3", or nullopt if there is
-// none (no operator, division by zero, a malformed expression).
+// none (no operator, a malformed expression). The longest expression that
+// makes sense is used, such as 2+3 in "(2+3", but a division by zero (or
+// nesting too deep) anywhere gives nullopt at once, so "5/0+1" gives none.
 std::optional<std::string> ArithmeticResult(
     const std::string& expressionBeforeEquals);
 
 // Evaluates +, -, *, / and parentheses on half-width text, such as
 // (2+3)*3. The text must have at least one operator and be used up;
-// division by zero or a result that is not finite gives nullopt.
+// division by zero, nesting deeper than 64 (by "(" or a unary "-") or a
+// result that is not finite gives nullopt.
 std::optional<double> EvaluateArithmetic(const std::string& expression);
 
 }  // namespace McBopomofo::SmartLearning

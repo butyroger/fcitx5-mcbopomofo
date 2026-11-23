@@ -146,6 +146,33 @@ TEST(QuickNumbersTest, ArithmeticResultInTheChineseMode) {
   EXPECT_EQ(ArithmeticResult("1+1=2"), std::nullopt);
   EXPECT_EQ(ArithmeticResult("我"), std::nullopt);
   EXPECT_EQ(ArithmeticResult("1/0"), std::nullopt);
+  EXPECT_EQ(ArithmeticResult("10*15/6"), "25");
+}
+
+// A division by zero anywhere gives no result, not the result of a shorter
+// expression at the end (as the macOS version since 545569e).
+TEST(QuickNumbersTest, DivisionByZeroGivesNoResult) {
+  EXPECT_EQ(ArithmeticResult("5/0+1"), std::nullopt);
+  EXPECT_EQ(ArithmeticResult("（1+1)/(1-1)"), std::nullopt);
+  EXPECT_EQ(ArithmeticResult("10/0*3"), std::nullopt);
+  EXPECT_EQ(ArithmeticResult("(5/0+1"), std::nullopt);
+  EXPECT_EQ(ArithmeticResult("我算5／0＋1"), std::nullopt);
+  EXPECT_TRUE(QuickNumberCandidates("5/0+1", kNow).empty());
+}
+
+TEST(QuickNumbersTest, NestingTooDeepGivesNoResult) {
+  std::string open64(64, '(');
+  std::string close64(64, ')');
+  EXPECT_EQ(EvaluateArithmetic(open64 + "1+1" + close64), 2.0);
+  EXPECT_EQ(EvaluateArithmetic("(" + open64 + "1+1" + close64 + ")"),
+            std::nullopt);
+  EXPECT_EQ(EvaluateArithmetic(std::string(64, '-') + "1+1"), 2.0);
+  EXPECT_EQ(EvaluateArithmetic(std::string(65, '-') + "1+1"), std::nullopt);
+  // A very long run does not use up the stack.
+  std::string deep(100000, '(');
+  EXPECT_EQ(EvaluateArithmetic(deep + "1+1"), std::nullopt);
+  EXPECT_EQ(ArithmeticResult(deep + "1+1" + std::string(100000, ')')),
+            std::nullopt);
 }
 
 struct MacCase {
@@ -155,7 +182,8 @@ struct MacCase {
 };
 
 // The outputs of the macOS version for the same codes, with 2026 as the
-// current year.
+// current year. The arithmetic results follow the macOS version at 545569e,
+// where a division by zero gives no result at all.
 const std::vector<MacCase> kMacCases = {
     {"2023.09.07", true, {"2023年9月7日（星期四）", "二〇二三年九月七日（星期四）", "中華民國112年9月7日（星期四）", "民國112年9月7日", "西元2023年9月7日（星期四）", "2023/09/07", "2023-09-07", "9月7日（星期四）", "九月七日（星期四）"}},
     {"112.9.7", true, {"2023年9月7日（星期四）", "二〇二三年九月七日（星期四）", "中華民國112年9月7日（星期四）", "民國112年9月7日", "西元2023年9月7日（星期四）", "2023/09/07", "2023-09-07", "9月7日（星期四）", "九月七日（星期四）"}},
@@ -264,6 +292,12 @@ const std::vector<std::pair<std::string, std::optional<std::string>>> kMacArithm
     {"1+‧5", std::nullopt},
     {"", std::nullopt},
     {"我", std::nullopt},
+    {"5/0+1", std::nullopt},
+    {"（1+1)/(1-1)", std::nullopt},
+    {"10/0*3", std::nullopt},
+    {"(5/0+1", std::nullopt},
+    {"我算(2+3", "5"},
+    {"10*15/6", "25"},
 };
 
 TEST(QuickNumbersTest, SameAsMac) {
