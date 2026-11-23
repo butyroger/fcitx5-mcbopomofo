@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=McBopomofo Vocabulary
+Name[zh_TW]=小麥注音管理詞彙
+Comment=Manage the phrases, excluded phrases and text templates of McBopomofo
+Comment[zh_TW]=管理小麥注音的中文詞彙、排除詞彙與文字範本
+Exec=mcbopomofo-vocabulary
+Icon=fcitx_mcbopomofo
+Terminal=false
+Categories=Utility;
+StartupNotify=true

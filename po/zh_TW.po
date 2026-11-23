@@ -587,3 +587,121 @@ msgstr ""
 "tel\t02-1234-5678\n"
 "em\tname@example.com\n"
 "sig\t謝謝您！\\n王小明 敬上\n"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Manage Vocabulary"
+msgstr "管理詞彙"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Chinese Phrases"
+msgstr "中文詞彙"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgctxt "Vocabulary"
+msgid "Excluded Phrases"
+msgstr "排除詞彙"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid ""
+"Phrases added here come first in the candidates. The reading is filled in "
+"automatically, and can be changed for a character with more than one "
+"reading."
+msgstr "這裡的詞會優先出現在候選字。注音會自動帶出，破音字可以自己改。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid ""
+"Phrases listed here never appear in the candidates, such as excluding 你 to "
+"have 妳 first."
+msgstr "這裡的詞永遠不會出現在候選字，例如排除「你」讓「妳」排前面。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Press ` and type the code to insert the text. Write \\n for a line break."
+msgstr "按 ` 後輸入代碼插入內容。內容要換行請寫 \\n。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Phrase"
+msgstr "詞"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Reading"
+msgstr "注音"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Code"
+msgstr "代碼"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Text"
+msgstr "內容"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Search"
+msgstr "搜尋"
+
+#: src/VocabularyManager/MainWindow.cpp
+#, qt-format
+msgid "%1 items"
+msgstr "%1 筆"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Edit"
+msgstr "編輯"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Delete"
+msgstr "刪除"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Show in File Manager"
+msgstr "在檔案管理員中顯示"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Add"
+msgstr "新增"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Save"
+msgstr "儲存"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid ""
+"Please type the reading in Bopomofo, with \"-\" between syllables, like "
+"ㄒㄧㄠˇ-ㄇㄞˋ."
+msgstr "請輸入注音，字與字之間用「-」隔開，例如 ㄒㄧㄠˇ-ㄇㄞˋ。"
+
+#: src/VocabularyManager/MainWindow.cpp
+#, qt-format
+msgid "\"%1\" is already in the list."
+msgstr "「%1」已經在清單裡。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Please type the code and the text."
+msgstr "請輸入代碼和內容。"
+
+#: src/VocabularyManager/MainWindow.cpp
+#, qt-format
+msgid "Added \"%1\"."
+msgstr "已加入「%1」。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "Saved."
+msgstr "已儲存。"
+
+#: src/VocabularyManager/MainWindow.cpp
+#, qt-format
+msgid "Deleted %1."
+msgstr "已刪除 %1 筆。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "The file was not found. The vocabulary folder may still be syncing."
+msgstr "找不到檔案，詞庫資料夾可能還在同步"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid "The file could not be written."
+msgstr "無法寫入檔案。"
+
+#: src/VocabularyManager/MainWindow.cpp
+msgid ""
+"The input method has not run yet, so the vocabulary can only be viewed. "
+"Switch to McBopomofo once, then open this window again."
+msgstr "輸入法還沒啟動過，詞彙只能瀏覽。請先切換到小麥注音一次，再重新開啟此視窗。"

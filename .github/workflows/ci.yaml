@@ -30,6 +30,7 @@ jobs:
           apt install -y cmake extra-cmake-modules gettext libfmt-dev
           apt install -y fcitx5 libfcitx5core-dev libfcitx5config-dev libfcitx5utils-dev fcitx5-modules-dev
           apt install -y libicu-dev libjson-c-dev
+          apt install -y qt6-base-dev
       - name: Install Build Essential
         if: matrix.os == 'ubuntu:25.10'
         run: |
@@ -58,7 +59,7 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syy
-          pacman -Sy --noconfirm cmake extra-cmake-modules git fcitx5 fmt
+          pacman -Sy --noconfirm cmake extra-cmake-modules git fcitx5 fmt qt6-base
       - name: Build
         run: |
           mkdir -p build

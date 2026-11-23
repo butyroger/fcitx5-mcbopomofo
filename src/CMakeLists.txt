@@ -144,3 +144,6 @@ if (ENABLE_TEST)
         )
         add_dependencies(runTest McBopomofoTest)
 endif ()
+
+# The vocabulary manager (its tests are built even without Qt).
+add_subdirectory(VocabularyManager)

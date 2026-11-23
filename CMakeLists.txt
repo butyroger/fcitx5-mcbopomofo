@@ -22,6 +22,18 @@ include(ECMUninstallTarget)
 
 option(ENABLE_TEST "Build Test" On)
 
+# The vocabulary manager, a Qt 6 program.
+option(ENABLE_VOCABULARY_MANAGER "Build the vocabulary manager (needs Qt 6 Widgets, DBus and Network)" On)
+if (ENABLE_VOCABULARY_MANAGER)
+    find_package(Qt6 QUIET COMPONENTS Widgets DBus Network)
+    if (NOT Qt6Widgets_FOUND OR NOT Qt6DBus_FOUND OR NOT Qt6Network_FOUND)
+        message(STATUS "Qt 6 Widgets, DBus or Network not found; the vocabulary manager is not built")
+        set(ENABLE_VOCABULARY_MANAGER Off)
+    else ()
+        message(STATUS "Building the vocabulary manager with Qt ${Qt6_VERSION}")
+    endif ()
+endif ()
+
 # clang-tidy
 option(ENABLE_CLANG_TIDY "Enable clang-tidy" Off)
 if (ENABLE_CLANG_TIDY)
@@ -76,6 +88,9 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-associated-phrases-v2.txt"
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-dictionary-service.json" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-bpmfvs-pua.txt" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcbopomofo-bpmfvs-variants.txt" DESTINATION "${FCITX_INSTALL_PKGDATADIR}/data")
+if (ENABLE_VOCABULARY_MANAGER)
+    install(FILES data/mcbopomofo-vocabulary.desktop DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+endif ()
 
 fcitx5_translate_desktop_file(org.fcitx.Fcitx5.Addon.McBopomofo.metainfo.xml.in
                               org.fcitx.Fcitx5.Addon.McBopomofo.metainfo.xml XML
@@ -90,6 +105,9 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "McBopomofo Smart Learning Edition for fci
 set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_PACKAGE_DEPENDS "fcitx5, wamerican")
+if (ENABLE_VOCABULARY_MANAGER)
+    string(APPEND CPACK_DEBIAN_PACKAGE_DEPENDS ", libqt6widgets6, libqt6dbus6, libqt6network6")
+endif ()
 set(CPACK_DEBIAN_PACKAGE_CONFLICTS "fcitx5-mcbopomofo")
 set(CPACK_DEBIAN_PACKAGE_REPLACES "fcitx5-mcbopomofo")
 set(CPACK_DEBIAN_PACKAGE_PROVIDES "fcitx5-mcbopomofo")
