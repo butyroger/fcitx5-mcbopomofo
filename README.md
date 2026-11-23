@@ -20,13 +20,25 @@
 - 狀態列選單可快速切換標準鍵盤與許氏鍵盤，切換後立即生效。
 - 新增相依套件 `wamerican`（英文字典），安裝時由 apt 自動帶入。
 
+## 自動學習與輸入輔助（learning.3）
+
+- 兩段式學習：同一個詞選過一次會先成為「暫存詞」，下次組字時優先出現；同一處再選一次，或之後再打出來送出，就寫入使用者詞庫 `data.txt`。被拆開重選的詞也一樣會學起來。暫存詞存在 `learning/temporary/`，30 天沒用到就過期。
+- 候選字窗按 `+` 提高、`-` 排除，單字也能用；符號與英文不能調整。
+- 英文聯想：打英文字母的開頭按 Tab，列出學過的英文字與字典裡的字。組字區空白時，Tab 照常交給應用程式。
+- 數字快打：按 `` ` `` 後打數字，可選擇日期、時間、金額大寫、千分位等格式，例如 `6548` 可選「陸仟伍佰肆拾捌元整」。
+- 直接計算：中文模式打算式再按 `=`，自動接上結果，例如 `（2＋3）＊3＝15`。除以零時不會接上結果。
+- 常用句：同一句送出 3 次後，打出開頭會提示「Tab：後半句」，按 Tab 接上。可在設定中關閉（Common sentences）。常用句存在 `learning/sentences/`。
+- 文字範本：按 `` ` `` 列出用戶資料夾 `text-templates.txt` 的範本；在範本中再按 `` ` ``，或打標點後按 ↓，開啟分類符號表，先選列、再選格。
+- 許氏鍵盤：組字區有字時打數字會進入組字區；沒有對應標點的符號鍵在中文後打全形、在英數後打半形。
+- 在任一台裝置刪除的暫存詞、常用句與英文字，會記在 `learning/removed.txt`，其他裝置同步後也不再出現。
+
 ## 安裝（Ubuntu 24.04／Linux Mint 22）
 
 先安裝 fcitx5 與本套件（`.deb` 檔請至專案的 Releases 頁面下載，以下以下載到目前目錄為例）：
 
 ```bash
 sudo apt update
-sudo apt install fcitx5 fcitx5-config-qt ./fcitx5-mcbopomofo-smart-learning_3.1.1-learning.2_amd64.deb
+sudo apt install fcitx5 fcitx5-config-qt ./fcitx5-mcbopomofo-smart-learning_3.1.1-learning.3_amd64.deb
 im-config -n fcitx5
 ```
 

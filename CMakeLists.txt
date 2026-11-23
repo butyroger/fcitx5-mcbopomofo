@@ -84,7 +84,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/org.fcitx.Fcitx5.Addon.McBopomofo.met
 # Debian package (Ubuntu 24.04 / Linux Mint 22)
 set(CPACK_GENERATOR "DEB")
 set(CPACK_PACKAGE_NAME "fcitx5-mcbopomofo-smart-learning")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}-learning.2")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}-learning.3")
 set(CPACK_PACKAGE_CONTACT "McBopomofo Smart Learning Edition")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "McBopomofo Smart Learning Edition for fcitx5")
 set(CPACK_DEBIAN_PACKAGE_SECTION "utils")
