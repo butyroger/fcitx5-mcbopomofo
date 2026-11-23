@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include "AtomicFile.h"
 
@@ -53,6 +54,12 @@ class RemovedEntries {
   // be read, the user data folder holding the learning folder is missing, or
   // the write fails.
   bool add(std::string_view kind, std::string_view key, double wallNow);
+
+  // Records the removal of all of |keys| as add() does, writing the file
+  // once. Returns false, writing nothing, if add() would refuse any of them;
+  // true, writing nothing, for no keys.
+  bool addAll(std::string_view kind, const std::vector<std::string>& keys,
+              double wallNow);
 
   // Takes the entry out. Returns true if it was taken out, or was not there
   // (nothing is written then); false, writing nothing, for a key or kind that

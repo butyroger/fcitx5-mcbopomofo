@@ -268,17 +268,32 @@ TemporaryPhraseStore::allPhrases() {
 
 bool TemporaryPhraseStore::forget(const std::string& value,
                                   const std::string& reading) {
+  return forgetAll({{value, reading}});
+}
+
+bool TemporaryPhraseStore::forgetAll(
+    const std::vector<std::pair<std::string, std::string>>& phrases) {
+  if (phrases.empty()) {
+    return true;
+  }
   if (!ensureLocalFileLoaded()) {
     return false;
   }
-  const std::string key = phraseKey(value, reading);
-  // Recorded first, so that the phrase is not brought back from the own file
-  // if another program wrote it meanwhile.
-  if (!removedEntries_->add(RemovedEntries::kTemporary, key, wallNow_())) {
+  std::vector<std::string> keys;
+  keys.reserve(phrases.size());
+  for (const auto& [value, reading] : phrases) {
+    keys.push_back(phraseKey(value, reading));
+  }
+  // Recorded first, so that the phrases are not brought back from the own
+  // file if another program wrote it meanwhile.
+  if (!removedEntries_->addAll(RemovedEntries::kTemporary, keys,
+                               wallNow_())) {
     return false;
   }
-  localPhrases_.erase(key);
-  phrases_.erase(key);
+  for (const auto& key : keys) {
+    localPhrases_.erase(key);
+    phrases_.erase(key);
+  }
   unsavedChanges_ = true;
   return save();
 }

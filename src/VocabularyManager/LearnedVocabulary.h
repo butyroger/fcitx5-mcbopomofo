@@ -88,14 +88,17 @@ class LearnedVocabulary {
   CommitResult add(LearnedKind kind, std::string_view field);
 
   // Removes the entries of |keys| on all the devices, recording them in
-  // "removed.txt". Stops at the first one that fails.
+  // "removed.txt". All of them are removed together, writing removed.txt
+  // once and this device's file once, or none is.
   BatchResult remove(LearnedKind kind, const std::vector<std::string>& keys);
 
   // Adds the temporary phrases of |keys| to the Chinese phrases (data.txt,
   // taking them out of exclude-phrases.txt), then forgets them. A phrase
   // already in data.txt is only forgotten. Nothing is done when data.txt
-  // does not exist (kFileMissing). Stops at the first one that fails; a
-  // phrase written to data.txt counts as done even if forgetting it fails.
+  // does not exist (kFileMissing). Stops writing data.txt at the first one
+  // that fails; those written are then forgotten together (one write of
+  // removed.txt and of this device's file), and count as done even if
+  // forgetting them fails.
   BatchResult addToPhrases(const std::vector<std::string>& keys);
 
  private:

@@ -145,6 +145,26 @@ TEST_F(RemovedEntriesTest, AddWritesSortedLinesInWholeSeconds) {
             "temporary\t甲乙 ㄐㄧㄚˇ-ㄧˇ\t1700000100\n");
 }
 
+TEST_F(RemovedEntriesTest, AddAllWritesAllOrNothing) {
+  writeFile(removedFile(), "english\told\t1700000000\n");
+  RemovedEntries entries([this] { return now_; });
+  entries.setLearningFolder(learning_);
+  // One key that breaks the line format: nothing is written.
+  EXPECT_FALSE(entries.addAll(RemovedEntries::kEnglish, {"apple", "bad\tword"},
+                              1700000100));
+  EXPECT_EQ(readFile(removedFile()), "english\told\t1700000000\n");
+  // No keys: nothing to write.
+  EXPECT_TRUE(entries.addAll(RemovedEntries::kEnglish, {}, 1700000100));
+  EXPECT_EQ(readFile(removedFile()), "english\told\t1700000000\n");
+  ASSERT_TRUE(entries.addAll(RemovedEntries::kEnglish, {"kiwi", "apple"},
+                             1700000100));
+  EXPECT_EQ(readFile(removedFile()),
+            "english\tapple\t1700000100\n"
+            "english\tkiwi\t1700000100\n"
+            "english\told\t1700000000\n");
+  EXPECT_EQ(entries.removedTime(RemovedEntries::kEnglish, "kiwi"), 1700000100);
+}
+
 TEST_F(RemovedEntriesTest, AddAndRemoveReadTheFileFirst) {
   RemovedEntries entries([this] { return now_; });
   entries.setLearningFolder(learning_);

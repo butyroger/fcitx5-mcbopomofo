@@ -144,6 +144,11 @@ class CommonSentenceStore {
   // cannot be read or written; false also if the own file cannot be written.
   bool remove(const std::string& sentence);
 
+  // Removes all of |sentences| as remove() does, writing "removed.txt" once
+  // and the own file once. Changes nothing if any of them cannot be
+  // recorded.
+  bool removeAll(const std::vector<std::string>& sentences);
+
   // Writes the own sentences to the own file atomically, leaving out those
   // past their lifetime. Returns false, writing nothing, while the own file
   // is pending or if the write fails.

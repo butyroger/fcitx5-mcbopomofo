@@ -200,31 +200,34 @@ BatchResult LearnedVocabulary::remove(LearnedKind kind,
     return result;
   }
   rebuildStores();
-  for (const auto& key : keys) {
-    bool removed = false;
-    bool pending = false;
-    switch (kind) {
-      case LearnedKind::kEnglish:
-        removed = englishWords_->remove(key);
-        pending = englishWords_->isLocalFilePending();
-        break;
-      case LearnedKind::kSentences:
-        removed = sentences_->remove(key);
-        pending = sentences_->isLocalFilePending();
-        break;
-      case LearnedKind::kTemporary: {
-        auto [value, reading] = splitPhraseKey(key);
-        removed = temporaryPhrases_->forget(value, reading);
-        pending = temporaryPhrases_->isLocalFilePending();
-        break;
+  // One write of removed.txt and of the own file for all of them.
+  bool removed = false;
+  bool pending = false;
+  switch (kind) {
+    case LearnedKind::kEnglish:
+      removed = englishWords_->removeAll(keys);
+      pending = englishWords_->isLocalFilePending();
+      break;
+    case LearnedKind::kSentences:
+      removed = sentences_->removeAll(keys);
+      pending = sentences_->isLocalFilePending();
+      break;
+    case LearnedKind::kTemporary: {
+      std::vector<std::pair<std::string, std::string>> phrases;
+      phrases.reserve(keys.size());
+      for (const auto& key : keys) {
+        phrases.push_back(splitPhraseKey(key));
       }
+      removed = temporaryPhrases_->forgetAll(phrases);
+      pending = temporaryPhrases_->isLocalFilePending();
+      break;
     }
-    if (!removed) {
-      result.status = failure(pending);
-      return result;
-    }
-    ++result.done;
   }
+  if (!removed) {
+    result.status = failure(pending);
+    return result;
+  }
+  result.done = keys.size();
   result.status = DeleteStatus::kDeleted;
   return result;
 }
@@ -248,6 +251,8 @@ BatchResult LearnedVocabulary::addToPhrases(
     return result;
   }
   rebuildStores();
+  std::vector<std::pair<std::string, std::string>> promoted;
+  result.status = DeleteStatus::kDeleted;
   for (const auto& key : keys) {
     auto [value, reading] = splitPhraseKey(key);
     // Gives false for a phrase already in data.txt too; it is then only
@@ -256,17 +261,17 @@ BatchResult LearnedVocabulary::addToPhrases(
         !dataFileHolds(data, value, reading)) {
       result.status = fs::exists(data, ec) ? DeleteStatus::kWriteFailed
                                            : DeleteStatus::kFileMissing;
-      return result;
+      break;
     }
-    // Counted once data.txt has the phrase, so that the input method is told
-    // even if forgetting it fails.
-    ++result.done;
-    if (!temporaryPhrases_->forget(value, reading)) {
-      result.status = failure(temporaryPhrases_->isLocalFilePending());
-      return result;
-    }
+    promoted.emplace_back(std::move(value), std::move(reading));
   }
-  result.status = DeleteStatus::kDeleted;
+  // Counted once data.txt has the phrases, so that the input method is told
+  // even if forgetting them fails. They are forgotten together: one write of
+  // removed.txt and of the own file.
+  result.done = promoted.size();
+  if (!temporaryPhrases_->forgetAll(promoted)) {
+    result.status = failure(temporaryPhrases_->isLocalFilePending());
+  }
   return result;
 }
 

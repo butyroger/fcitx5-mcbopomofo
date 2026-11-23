@@ -502,16 +502,26 @@ bool CommonSentenceStore::add(const std::string& sentence) {
 }
 
 bool CommonSentenceStore::remove(const std::string& sentence) {
+  return removeAll({sentence});
+}
+
+bool CommonSentenceStore::removeAll(const std::vector<std::string>& sentences) {
+  if (sentences.empty()) {
+    return true;
+  }
   if (!ensureLocalFileLoaded()) {
     return false;
   }
   reload();
-  // Recorded first, so that the sentence is not brought back from the own
+  // Recorded first, so that the sentences are not brought back from the own
   // file if another program wrote it meanwhile.
-  if (!removedEntries_->add(RemovedEntries::kSentence, sentence, wallNow_())) {
+  if (!removedEntries_->addAll(RemovedEntries::kSentence, sentences,
+                               wallNow_())) {
     return false;
   }
-  localEntries_.erase(sentence);
+  for (const auto& sentence : sentences) {
+    localEntries_.erase(sentence);
+  }
   unsavedChanges_ = true;
   bool saved = save();
   reload();

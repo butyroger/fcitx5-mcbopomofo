@@ -1,8 +1,14 @@
 #include <gtest/gtest.h>
 
+#ifdef __linux__
+#include <sys/inotify.h>
+#include <unistd.h>
+#endif
+
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iterator>
 #include <map>
 #include <sstream>
@@ -322,17 +328,119 @@ TEST_F(LearnedVocabularyTest, AddToPhrasesWithoutDataFile) {
             1u);
 }
 
-TEST_F(LearnedVocabularyTest, RemoveStopsAtTheFirstFailure) {
+TEST_F(LearnedVocabularyTest, RemoveIsAllOrNothing) {
   writeFile(own("english"), "apple\t3\nkiwi\t2\n");
   auto vocabulary = make(kDeviceID);
   // A key with a tab cannot be recorded in removed.txt.
   auto result =
       vocabulary->remove(LearnedKind::kEnglish, {"apple", "bad\tword", "kiwi"});
   EXPECT_EQ(result.status, DeleteStatus::kWriteFailed);
-  EXPECT_EQ(result.done, 1u);
+  EXPECT_EQ(result.done, 0u);
+  EXPECT_FALSE(fs::exists(removed()));
   EXPECT_EQ(keysOf(vocabulary->rows(LearnedKind::kEnglish, statusTexts())),
-            (std::vector<std::string>{"kiwi"}));
+            (std::vector<std::string>{"apple", "kiwi"}));
 }
+
+#ifdef __linux__
+// Counts the files written into |folder| (an atomic write renames a new file
+// over the old one) while |action| runs, by name.
+static std::map<std::string, int> filesWritten(const fs::path& folder,
+                                        const std::function<void()>& action) {
+  std::map<std::string, int> written;
+  int fd = inotify_init1(IN_NONBLOCK);
+  if (fd < 0) {
+    ADD_FAILURE() << "inotify_init1";
+    return written;
+  }
+  int watch = inotify_add_watch(fd, folder.c_str(), IN_MOVED_TO | IN_CLOSE_WRITE);
+  action();
+  alignas(struct inotify_event) char buffer[65536];
+  for (;;) {
+    ssize_t length = read(fd, buffer, sizeof(buffer));
+    if (length <= 0) {
+      break;
+    }
+    for (char* p = buffer; p < buffer + length;) {
+      auto* event = reinterpret_cast<struct inotify_event*>(p);
+      if ((event->mask & IN_MOVED_TO) && event->len > 0) {
+        ++written[event->name];
+      }
+      p += sizeof(struct inotify_event) + event->len;
+    }
+  }
+  inotify_rm_watch(fd, watch);
+  close(fd);
+  return written;
+}
+
+TEST_F(LearnedVocabularyTest, RemovingManyWritesEachFileOnce) {
+  auto at = std::to_string(static_cast<long long>(kNow - kDay));
+  std::string english;
+  std::string temporary;
+  std::vector<std::string> words;
+  std::vector<std::string> phrases;
+  for (char c = 'a'; c <= 'j'; ++c) {
+    std::string word = std::string("word") + c;
+    english += word + "\t3\n";
+    words.push_back(word);
+    std::string phrase = std::string("詞") + c + " ㄘˊ";
+    temporary += phrase + " " + at + "\n";
+    phrases.push_back(phrase);
+  }
+  english += "kept\t2\n";
+  writeFile(own("english"), english);
+  writeFile(own("temporary"), temporary);
+  writeFile(removed(), "english\told\t1\n");
+  auto vocabulary = make(kDeviceID);
+
+  auto inLearning = filesWritten(learning(), [&] {
+    EXPECT_EQ(vocabulary->remove(LearnedKind::kEnglish, words).status,
+              DeleteStatus::kDeleted);
+  });
+  EXPECT_EQ(inLearning, (std::map<std::string, int>{{"removed.txt", 1}}));
+  std::string ownName = own("english").filename().string();
+  EXPECT_EQ(filesWritten(learning() / "english",
+                         [&] {
+                           EXPECT_EQ(vocabulary->remove(LearnedKind::kEnglish,
+                                                        {"kept"})
+                                         .done,
+                                     1u);
+                         }),
+            (std::map<std::string, int>{{ownName, 1}}));
+  EXPECT_EQ(readFile(own("english")), "");
+  std::string list = readFile(removed());
+  for (const auto& word : words) {
+    EXPECT_NE(list.find("english\t" + word + "\t"), std::string::npos);
+  }
+  EXPECT_NE(list.find("english\told\t1\n"), std::string::npos);
+
+  // The temporary phrases, through both ways of taking them out.
+  std::vector<std::string> forgotten(phrases.begin(), phrases.begin() + 5);
+  std::vector<std::string> promoted(phrases.begin() + 5, phrases.end());
+  writeFile(folder_ / "data.txt", "");
+  std::map<std::string, int> inTemporary;
+  inLearning = filesWritten(learning(), [&] {
+    inTemporary = filesWritten(learning() / "temporary", [&] {
+      auto result = vocabulary->remove(LearnedKind::kTemporary, forgotten);
+      EXPECT_EQ(result.done, 5u);
+    });
+  });
+  EXPECT_EQ(inLearning, (std::map<std::string, int>{{"removed.txt", 1}}));
+  EXPECT_EQ(inTemporary, (std::map<std::string, int>{{ownName, 1}}));
+  inLearning = filesWritten(learning(), [&] {
+    inTemporary = filesWritten(learning() / "temporary", [&] {
+      auto result = vocabulary->addToPhrases(promoted);
+      EXPECT_EQ(result.status, DeleteStatus::kDeleted);
+      EXPECT_EQ(result.done, 5u);
+    });
+  });
+  EXPECT_EQ(inLearning, (std::map<std::string, int>{{"removed.txt", 1}}));
+  EXPECT_EQ(inTemporary, (std::map<std::string, int>{{ownName, 1}}));
+  EXPECT_EQ(readFile(own("temporary")), "");
+  EXPECT_TRUE(
+      vocabulary->rows(LearnedKind::kTemporary, statusTexts()).empty());
+}
+#endif
 
 TEST_F(LearnedVocabularyTest, PromotedPhraseCountsWhenForgettingFails) {
   auto at = std::to_string(static_cast<long long>(kNow - kDay));

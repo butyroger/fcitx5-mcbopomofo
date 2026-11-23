@@ -84,16 +84,31 @@ bool RemovedEntries::reloadIfChanged() {
 
 bool RemovedEntries::add(std::string_view kind, std::string_view key,
                          double wallNow) {
-  if (learningFolder_.empty() || breaksLineFormat(kind) ||
-      breaksLineFormat(key)) {
+  return addAll(kind, {std::string(key)}, wallNow);
+}
+
+bool RemovedEntries::addAll(std::string_view kind,
+                            const std::vector<std::string>& keys,
+                            double wallNow) {
+  if (learningFolder_.empty() || breaksLineFormat(kind)) {
     return false;
+  }
+  for (const auto& key : keys) {
+    if (breaksLineFormat(key)) {
+      return false;
+    }
+  }
+  if (keys.empty()) {
+    return true;
   }
   std::unordered_map<std::string, double> entries;
   FileStamp stamp;
   if (!readFile(&entries, &stamp)) {
     return false;
   }
-  entries[entryKey(kind, key)] = wallNow;
+  for (const auto& key : keys) {
+    entries[entryKey(kind, key)] = wallNow;
+  }
   return writeFile(std::move(entries));
 }
 

@@ -8,6 +8,7 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "AtomicFile.h"
@@ -93,6 +94,12 @@ class TemporaryPhraseStore {
   // or if "removed.txt" cannot be read or written; false also if the own
   // file cannot be written.
   bool forget(const std::string& value, const std::string& reading);
+
+  // Forgets all of |phrases|, each (value, reading), as forget() does,
+  // writing "removed.txt" once and the own file once. Changes nothing if any
+  // of them cannot be recorded.
+  bool forgetAll(
+      const std::vector<std::pair<std::string, std::string>>& phrases);
 
   // The values of each reading, the most recently picked first.
   std::unordered_map<std::string, std::vector<std::string>> phrasesByReading()

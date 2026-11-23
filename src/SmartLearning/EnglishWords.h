@@ -159,6 +159,10 @@ class EnglishWordStore {
   // also if the own file cannot be written.
   bool remove(const std::string& word);
 
+  // Removes all of |words| as remove() does, writing "removed.txt" once and
+  // the own file once. Changes nothing if any of them cannot be recorded.
+  bool removeAll(const std::vector<std::string>& words);
+
  private:
   void loadIfNeeded();
   // Returns false if the own file could not be loaded.

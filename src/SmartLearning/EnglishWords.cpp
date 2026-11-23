@@ -381,16 +381,25 @@ bool EnglishWordStore::add(const std::string& word) {
 }
 
 bool EnglishWordStore::remove(const std::string& word) {
+  return removeAll({word});
+}
+
+bool EnglishWordStore::removeAll(const std::vector<std::string>& words) {
+  if (words.empty()) {
+    return true;
+  }
   if (!ensureLocalFileLoaded()) {
     return false;
   }
   reload();
-  // Recorded first, so that the word is not brought back from the own file
-  // if another program wrote it meanwhile.
-  if (!removedEntries_->add(RemovedEntries::kEnglish, word, wallNow_())) {
+  // Recorded first, so that the words are not brought back from the own
+  // file if another program wrote it meanwhile.
+  if (!removedEntries_->addAll(RemovedEntries::kEnglish, words, wallNow_())) {
     return false;
   }
-  localCounts_.erase(word);
+  for (const auto& word : words) {
+    localCounts_.erase(word);
+  }
   unsavedChanges_ = true;
   bool saved = save();
   reload();
