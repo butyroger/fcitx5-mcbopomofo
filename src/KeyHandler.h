@@ -431,6 +431,11 @@ class KeyHandler {
   // a syllable typed right after an English word.
   bool convertTrailingEnglishToChinese(char key,
                                        const StateCallback& stateCallback);
+  // After "=" is typed at the end of an arithmetic expression, such as
+  // （2＋3）＊3＝, puts the result after it. Called once the key has been put
+  // into the composition.
+  void appendArithmeticResultAfterKey(char charCode,
+                                      const StateCallback& stateCallback);
   // Records the English words in the composition about to be committed.
   void learnEnglishWordsFromWalk();
   // Learns from the composition about to be committed: the temporary phrases

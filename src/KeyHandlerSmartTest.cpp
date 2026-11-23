@@ -1029,4 +1029,48 @@ TEST_F(KeyHandlerSmartTest, NoEnglishCompletionWhenSwitchingIsOff) {
   EXPECT_TRUE(candidateValues().empty());
 }
 
+// In the standard layout, "+" and ")" after a digit key put the keys as is,
+// and "=" after ")" is the full-width punctuation.
+TEST_F(KeyHandlerSmartTest, EqualsPutsTheResultOfTheExpression) {
+  type("(2+3)=");
+  EXPECT_EQ(composingBuffer(), "（2+3)＝5");
+
+  restart();
+  type("(2+3)*(1+1)=");
+  EXPECT_EQ(composingBuffer(), "（2+3)＊（1+1)＝10");
+
+  restart();
+  type("su3cl3(2+3)=");
+  EXPECT_EQ(composingBuffer(), "你好（2+3)＝5");
+}
+
+TEST_F(KeyHandlerSmartTest, EqualsInTheEnglishModePutsTheResult) {
+  // "12" after ")" and "*" is typed in the English mode, and so is "=".
+  type("(1+1)*12");
+  EXPECT_TRUE(keyHandler_->isSmartEnglishMode());
+  type("=");
+  EXPECT_EQ(composingBuffer(), "（1+1)＊12=24");
+}
+
+TEST_F(KeyHandlerSmartTest, EqualsBeforeTheCursorUsesTheTextBeforeIt) {
+  type("(2+3)");
+  press(Key::namedKey(Key::KeyName::LEFT));
+  type("=");
+  EXPECT_EQ(composingBuffer(), "（2+3=5)");
+}
+
+TEST_F(KeyHandlerSmartTest, EqualsWithoutAnExpressionIsJustTyped) {
+  type("su3cl3=");
+  EXPECT_EQ(composingBuffer(), "你好＝");
+
+  restart();
+  type("ok12=");
+  EXPECT_EQ(composingBuffer(), "ok12=");
+
+  // The result ends the expression, so another "=" adds nothing.
+  restart();
+  type("(2+3)==");
+  EXPECT_EQ(composingBuffer(), "（2+3)＝5=");
+}
+
 }  // namespace McBopomofo

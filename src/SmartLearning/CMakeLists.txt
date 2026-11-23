@@ -19,6 +19,8 @@ add_library(SmartLearningLib
         LearningPaths.cpp
         MixedInput.h
         MixedInput.cpp
+        QuickNumbers.h
+        QuickNumbers.cpp
         RemovedEntries.h
         RemovedEntries.cpp
         TemporaryPhrases.h
@@ -31,8 +33,9 @@ add_library(SmartLearningLib
         UserPhraseFile.cpp)
 target_include_directories(SmartLearningLib PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${CMAKE_CURRENT_SOURCE_DIR}/../Engine)
-target_link_libraries(SmartLearningLib PUBLIC McBopomofoLMLib gramambular2_lib MandarinLib)
+        ${CMAKE_CURRENT_SOURCE_DIR}/../Engine
+        ${CMAKE_CURRENT_SOURCE_DIR}/../ChineseNumbers)
+target_link_libraries(SmartLearningLib PUBLIC McBopomofoLMLib gramambular2_lib MandarinLib ChineseNumbersLib)
 
 if (ENABLE_TEST)
         enable_testing()
@@ -45,6 +48,7 @@ if (ENABLE_TEST)
                 LearnPhraseTest.cpp
                 LearningPathsTest.cpp
                 MixedInputTest.cpp
+                QuickNumbersTest.cpp
                 RemovedEntriesTest.cpp
                 TemporaryPhrasesTest.cpp
                 UserDataFolderTest.cpp

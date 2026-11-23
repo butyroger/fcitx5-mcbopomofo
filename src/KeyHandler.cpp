@@ -39,6 +39,7 @@
 #include "Log.h"
 #include "MixedInput.h"
 #include "NumberInputHelper.h"
+#include "QuickNumbers.h"
 #include "UTF8Helper.h"
 
 namespace McBopomofo {
@@ -190,6 +191,7 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
         setSmartEnglishMode(false);
       }
       stateCallback(buildInputtingState());
+      appendArithmeticResultAfterKey(charCode, stateCallback);
       return true;
     }
     // Tab lists the completions of the English word, such as associated for
@@ -644,7 +646,11 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
 
     if (key.ctrlPressed) {
       unigram = std::string(kCtrlPunctuationKeyPrefix) + chrStr;
-      return handlePunctuation(unigram, state, stateCallback, errorCallback);
+      if (!handlePunctuation(unigram, state, stateCallback, errorCallback)) {
+        return false;
+      }
+      appendArithmeticResultAfterKey(key.ascii, stateCallback);
+      return true;
     }
 
     if (halfWidthPunctuationEnabled_ || isAfterHalfWidthAlphanumeric()) {
@@ -653,11 +659,13 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       unigram = std::string(kHalfWidthPunctuationKeyPrefix) +
                 GetKeyboardLayoutName(reading_.keyboardLayout()) + "_" + chrStr;
       if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
+        appendArithmeticResultAfterKey(key.ascii, stateCallback);
         return true;
       }
 
       unigram = std::string(kHalfWidthPunctuationKeyPrefix) + chrStr;
       if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
+        appendArithmeticResultAfterKey(key.ascii, stateCallback);
         return true;
       }
     } else {
@@ -665,12 +673,14 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       unigram = std::string(kPunctuationKeyPrefix) +
                 GetKeyboardLayoutName(reading_.keyboardLayout()) + "_" + chrStr;
       if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
+        appendArithmeticResultAfterKey(key.ascii, stateCallback);
         return true;
       }
 
       // Not handled, try generic punctuations.
       unigram = std::string(kPunctuationKeyPrefix) + chrStr;
       if (handlePunctuation(unigram, state, stateCallback, errorCallback)) {
+        appendArithmeticResultAfterKey(key.ascii, stateCallback);
         return true;
       }
     }
@@ -2249,6 +2259,34 @@ bool KeyHandler::insertAutoSpaceIfNeeded(bool beforeEnglish) {
     return false;
   }
   return grid_.insertReading(SmartLearning::kAutoSpaceReading);
+}
+
+void KeyHandler::appendArithmeticResultAfterKey(
+    char charCode, const StateCallback& stateCallback) {
+  if (charCode != '=' || inputMode_ != McBopomofo::InputMode::McBopomofo ||
+      !reading_.isEmpty()) {
+    return;
+  }
+  auto inputting = buildInputtingState();
+  const std::string& buffer = inputting->composingBuffer;
+  size_t cursor = std::min(inputting->cursorIndex, buffer.size());
+  // The text before the "=" just typed; the cursor index is in bytes, so the
+  // last code point is dropped.
+  std::vector<std::string> characters = Split(buffer.substr(0, cursor));
+  if (characters.empty()) {
+    return;
+  }
+  characters.pop_back();
+  std::string expression;
+  for (const auto& c : characters) {
+    expression += c;
+  }
+  auto result = SmartLearning::ArithmeticResult(expression);
+  if (!result.has_value()) {
+    return;
+  }
+  insertLiteralText(*result);
+  stateCallback(buildInputtingState());
 }
 
 void KeyHandler::switchToSmartEnglish(const std::string& text) {
