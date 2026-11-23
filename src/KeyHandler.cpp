@@ -242,6 +242,15 @@ bool KeyHandler::handle(Key key, McBopomofo::InputState* state,
       return true;
     }
 
+    // A lowercase letter that is not a key of the layout, like "q" in Hsu,
+    // starts English too, so that "quote" can be typed and completed.
+    if (reading_.isEmpty() && charCode >= 'a' && charCode <= 'z' &&
+        !reading_.isValidKey(charCode)) {
+      switchToSmartEnglish(std::string(1, charCode));
+      stateCallback(buildInputtingState());
+      return true;
+    }
+
     if (!reading_.isEmpty() && isPrintableAscii && charCode != Key::SPACE) {
       if (reading_.isValidKey(charCode)) {
         // A key that replaces a part of the reading, like the second "p" in

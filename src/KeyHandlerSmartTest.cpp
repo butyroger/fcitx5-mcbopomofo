@@ -123,7 +123,7 @@ class KeyHandlerSmartTest : public ::testing::Test {
         "TESTDEV1", "test",
         SmartLearning::EnglishLexicon::fromWords(
             {"hello", "help", "helpful", "app", "apple", "you", "ok", "iphone",
-             "email", "chat"}),
+             "email", "chat", "quote", "quiet"}),
         [] { return 1000.0; });
     englishStore_->setLearningFolder(folder_);
     lm_->setEnglishCompletionProvider(
@@ -1088,6 +1088,47 @@ TEST_F(KeyHandlerSmartTest, TabAfterUnfinishedReadingWithoutCompletions) {
   EXPECT_EQ(errors_, 0);
   EXPECT_EQ(composingBuffer(), "su");
   EXPECT_TRUE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, LetterOutsideTheLayoutStartsEnglish) {
+  // "q" is not a key of the Hsu layout.
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  EXPECT_TRUE(pressHandled(Key::asciiKey('q')));
+  EXPECT_TRUE(keyHandler_->isSmartEnglishMode());
+  type("uo");
+  EXPECT_EQ(composingBuffer(), "quo");
+  EXPECT_TRUE(pressHandled(Key::asciiKey(Key::TAB)));
+  EXPECT_EQ(errors_, 0);
+  EXPECT_EQ(candidateValues(), (std::vector<std::string>{"quo", "quote"}));
+  selectShownCandidate("quote");
+  EXPECT_EQ(composingBuffer(), "quote");
+
+  // After Chinese, the letter is kept as English instead of beeping. 你 is
+  // ㄋㄧˇ.
+  restart();
+  type("nef");
+  ASSERT_EQ(composingBuffer(), "你");
+  for (char c : std::string("quote")) {
+    EXPECT_TRUE(pressHandled(Key::asciiKey(c)));
+  }
+  EXPECT_EQ(errors_, 0);
+  EXPECT_EQ(composingBuffer(), "你 quote");
+  EXPECT_TRUE(keyHandler_->isSmartEnglishMode());
+}
+
+TEST_F(KeyHandlerSmartTest, LetterOfTheLayoutStillStartsAReading) {
+  // Every letter is a key of the standard layout: "q" is ㄆ.
+  type("q");
+  EXPECT_EQ(composingBuffer(), "ㄆ");
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
+
+  // Without smart switching, "q" in Hsu still goes to the program.
+  restart();
+  keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
+  useLayout(BopomofoKeyboardLayout::HsuLayout());
+  EXPECT_FALSE(pressHandled(Key::asciiKey('q')));
+  EXPECT_TRUE(isEmptyState());
+  EXPECT_FALSE(keyHandler_->isSmartEnglishMode());
 }
 
 TEST_F(KeyHandlerSmartTest, NoEnglishCompletionWhenSwitchingIsOff) {
