@@ -49,7 +49,7 @@
 
 ```bash
 sudo apt update
-sudo apt install fcitx5 fcitx5-config-qt ./fcitx5-mcbopomofo-smart-learning_3.1.1-learning.3_amd64.deb
+sudo apt install fcitx5 fcitx5-config-qt ./fcitx5-mcbopomofo-smart-learning_3.1.1-learning.4_amd64.deb
 im-config -n fcitx5
 ```
 

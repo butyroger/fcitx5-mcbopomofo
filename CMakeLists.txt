@@ -66,7 +66,7 @@ include("${FCITX_INSTALL_CMAKECONFIG_DIR}/Fcitx5Utils/Fcitx5CompilerSettings.cma
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
 # The package version, also shown in the user guide.
-set(MCBOPOMOFO_PACKAGE_VERSION "${PROJECT_VERSION}-learning.3")
+set(MCBOPOMOFO_PACKAGE_VERSION "${PROJECT_VERSION}-learning.4")
 # The user guide, opened from the input method menu.
 set(MCBOPOMOFO_USER_GUIDE_DIR "${CMAKE_INSTALL_DATADIR}/fcitx5-mcbopomofo")
 set(MCBOPOMOFO_USER_GUIDE_PATH "${CMAKE_INSTALL_FULL_DATADIR}/fcitx5-mcbopomofo/user-guide.html")
