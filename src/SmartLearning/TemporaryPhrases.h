@@ -67,7 +67,9 @@ class TemporaryPhraseStore {
   // space, a tab or a line break is ignored. The file is written by save().
   void add(const std::string& value, const std::string& reading);
 
-  // Removes the phrase if it is there. The file is written by save().
+  // Removes the phrase if it is there. The file is written by save(); a
+  // phrase that is only in other devices' files is removed from memory only,
+  // leaving no unsaved change.
   void remove(const std::string& value, const std::string& reading);
 
   // The values of each reading, the most recently picked first.

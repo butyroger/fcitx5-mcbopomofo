@@ -294,6 +294,20 @@ void McBopomofoLM::setTemporaryPhrases(
   temporaryPhrases_ = std::move(phrases);
 }
 
+bool McBopomofoLM::isFirstUserPhraseOrExcluded(const std::string& value,
+                                               const std::string& reading) {
+  auto userUnigrams = userPhrases_.getUnigrams(reading);
+  if (!userUnigrams.empty() && userUnigrams.front().value() == value) {
+    return true;
+  }
+  for (const auto& unigram : excludedPhrases_.getUnigrams(reading)) {
+    if (unigram.value() == value) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void McBopomofoLM::setSymbolTable(std::vector<SymbolCategory> symbolTable) {
   symbolTable_ = std::move(symbolTable);
 }

@@ -289,9 +289,11 @@ TEST_F(TemporaryPhrasesTest, RemoveTakesThePhraseOutWithoutRemovedFile) {
   EXPECT_EQ(readFile(ownFile()), "");
   EXPECT_FALSE(fs::exists(learning_ / "removed.txt"));
 
-  // Another device's phrase is taken out until the next reload.
+  // Another device's phrase is taken out until the next reload, leaving
+  // the own file as it is.
   store->remove("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ");
   EXPECT_FALSE(store->contains("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ"));
+  EXPECT_FALSE(store->hasUnsavedChanges());
   store->reload();
   EXPECT_TRUE(store->contains("丙丁", "ㄅㄧㄥˇ-ㄉㄧㄥ"));
 }

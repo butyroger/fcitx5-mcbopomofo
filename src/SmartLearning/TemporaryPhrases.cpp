@@ -198,8 +198,10 @@ void TemporaryPhraseStore::remove(const std::string& value,
   if (phrases_.erase(key) == 0) {
     return;
   }
-  localPhrases_.erase(key);
-  unsavedChanges_ = true;
+  // A phrase only another device has leaves the own file as it is.
+  if (localPhrases_.erase(key) > 0) {
+    unsavedChanges_ = true;
+  }
 }
 
 std::unordered_map<std::string, std::vector<std::string>>

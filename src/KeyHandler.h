@@ -498,6 +498,9 @@ class KeyHandler {
   // typed again become user phrases, and the English words and the sentences
   // are recorded.
   void learnFromCommittedComposition();
+  // Whether the loaded user phrases already give the phrase first, or
+  // exclude it, so that learning it would change nothing. Memory only.
+  bool isAlreadyLearned(const std::string& value, const std::string& reading);
   // Learns the phrase of the candidate just picked at |cursor|, or the
   // characters that broke up the phrase there in |walkBefore|.
   void learnPickedPhrase(

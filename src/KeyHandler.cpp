@@ -2610,15 +2610,27 @@ void KeyHandler::learnFromCommittedComposition() {
   if (phrases.empty()) {
     return;
   }
+  // A phrase already learned (for example one still temporary on another
+  // device) would only make the learner read data.txt again.
+  std::vector<SmartLearning::Phrase> toLearn;
   for (const auto& [value, reading] : phrases) {
     temporaryPhraseStore_->remove(value, reading);
+    if (!isAlreadyLearned(value, reading)) {
+      toLearn.emplace_back(value, reading);
+    }
   }
-  if (userPhraseLearner_) {
-    userPhraseLearner_(phrases);
+  if (userPhraseLearner_ && !toLearn.empty()) {
+    userPhraseLearner_(toLearn);
   }
   if (onPhraseLearned_) {
     onPhraseLearned_();
   }
+}
+
+bool KeyHandler::isAlreadyLearned(const std::string& value,
+                                  const std::string& reading) {
+  auto* lm = dynamic_cast<McBopomofoLM*>(lm_.get());
+  return lm != nullptr && lm->isFirstUserPhraseOrExcluded(value, reading);
 }
 
 void KeyHandler::learnPickedPhrase(
@@ -2651,7 +2663,9 @@ void KeyHandler::learnPickedPhrase(
           temporaryPhraseStore_->remove(action.value, action.reading);
           changed = true;
         }
-        if (userPhraseLearner_) {
+        // Memory only: the learner reads data.txt.
+        if (userPhraseLearner_ &&
+            !isAlreadyLearned(action.value, action.reading)) {
           userPhraseLearner_({{action.value, action.reading}});
         }
         break;

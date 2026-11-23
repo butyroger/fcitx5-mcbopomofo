@@ -115,6 +115,12 @@ class McBopomofoLM : public Formosa::Gramambular2::LanguageModel {
   // are typed again and become user phrases, or expire.
   void setTemporaryPhrases(
       std::unordered_map<std::string, std::vector<std::string>> phrases);
+
+  // Whether learning the phrase would leave the loaded user phrases as they
+  // are: it is already the first user phrase of its reading, or it is
+  // excluded. Looks up memory only.
+  bool isFirstUserPhraseOrExcluded(const std::string& value,
+                                   const std::string& reading);
   static constexpr char kPunctuationListKey[] = "_punctuation_list";
 
   struct SymbolCategory {

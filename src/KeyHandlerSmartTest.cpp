@@ -846,6 +846,53 @@ TEST_F(KeyHandlerSmartTest, CommittingALongSentenceWritesOnce) {
   }
 }
 
+TEST_F(KeyHandlerSmartTest, OtherDeviceTemporaryPhraseIsLearnedOnce) {
+  // Picked on another device only: this device's file does not have it.
+  std::filesystem::create_directories(folder_ / "temporary");
+  writeFile(folder_ / "temporary" / "TESTDEV2-other.txt",
+            std::string("妳好 ") + kNiHaoReading + " 1699999000\n");
+  temporaryStore_->reload();
+  applyTemporaryPhrases();
+  ASSERT_TRUE(temporaryStore_->contains("妳好", kNiHaoReading));
+
+  type(kNiHaoKeys);
+  ASSERT_EQ(composingBuffer(), "妳好");
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "妳好");
+  EXPECT_EQ(learnerCalls_, 1);
+  EXPECT_EQ(dataWrites_, 1);
+  EXPECT_FALSE(temporaryStore_->hasUnsavedChanges());
+
+  // The other device's file brings it back on the next reload; committing it
+  // again reads nothing and leaves the own file alone.
+  temporaryStore_->reload();
+  applyTemporaryPhrases();
+  ASSERT_TRUE(temporaryStore_->contains("妳好", kNiHaoReading));
+  restart();
+  type(kNiHaoKeys);
+  press(Key::asciiKey(Key::RETURN));
+  EXPECT_EQ(committed_, "妳好");
+  EXPECT_EQ(learnerCalls_, 1);
+  EXPECT_FALSE(temporaryStore_->hasUnsavedChanges());
+  EXPECT_FALSE(temporaryStore_->contains("妳好", kNiHaoReading));
+}
+
+TEST_F(KeyHandlerSmartTest, PickingALearnedPhraseAgainDoesNotCallTheLearner) {
+  type(kNiHaoKeys);
+  pickCandidate(kNiHaoReading, "妳好");
+  restart();
+  type(kNiHaoKeys);
+  pickCandidate(kNiHaoReading, "妳好");
+  ASSERT_EQ(learnerCalls_, 1);
+  ASSERT_EQ(readFile(data_), "# user phrases\n妳好 ㄋㄧˇ-ㄏㄠˇ\n");
+
+  // Already the first user phrase of its reading.
+  restart();
+  type(kNiHaoKeys);
+  pickCandidate(kNiHaoReading, "妳好");
+  EXPECT_EQ(learnerCalls_, 1);
+}
+
 TEST_F(KeyHandlerSmartTest, UppercaseLetterCommitDoesNotLearnPhrases) {
   keyHandler_->setSmartChineseEnglishSwitchEnabled(false);
   temporaryStore_->add("妳好", kNiHaoReading);
