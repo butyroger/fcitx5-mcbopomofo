@@ -111,8 +111,6 @@ TEST(McBopomofoConfigTest, VocabularyManagerMenuItemWhenBuilt) {
 TEST(McBopomofoConfigTest, MenuItemsInMcBopomofo) {
   EXPECT_EQ(userFileAndHelpMenuActions(InputMode::McBopomofo, true),
             (std::vector<std::string>{
-                "mcbopomofo-user-phrases-edit",
-                "mcbopomofo-user-excluded-phrases-edit",
                 "mcbopomofo-manage-vocabulary",
                 "mcbopomofo-symbol-table-edit",
                 "mcbopomofo-floating-composition", "mcbopomofo-user-guide",
@@ -134,8 +132,14 @@ TEST(McBopomofoConfigTest, MenuItemsWithoutTheVocabularyManager) {
   EXPECT_EQ(std::count(names.begin(), names.end(),
                        std::string("mcbopomofo-manage-vocabulary")),
             0);
-  // Without the vocabulary manager, the text templates file is opened from the
-  // menu instead.
+  // Without the vocabulary manager, the user phrase, excluded phrase and text
+  // templates files are opened from the menu instead.
+  EXPECT_EQ(std::count(names.begin(), names.end(),
+                       std::string("mcbopomofo-user-phrases-edit")),
+            1);
+  EXPECT_EQ(std::count(names.begin(), names.end(),
+                       std::string("mcbopomofo-user-excluded-phrases-edit")),
+            1);
   EXPECT_EQ(std::count(names.begin(), names.end(),
                        std::string("mcbopomofo-text-templates-edit")),
             1);

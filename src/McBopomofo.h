@@ -158,15 +158,16 @@ inline constexpr char kAboutAction[] = "mcbopomofo-about";
 
 // The menu items after the input options, in menu order, in |mode|. The user
 // phrase files of Plain Bopomofo are not edited from the menu; the text
-// templates and the symbol table are the same files in both modes. The text
-// templates are edited in the vocabulary manager when there is one, so the
-// menu item that opens their file is only for a build without it. The
+// templates and the symbol table are the same files in both modes. The user
+// phrases, the excluded phrases and the text templates are edited in the
+// vocabulary manager when there is one, so the menu items that open their
+// files are only for a build without it. The
 // floating composition item is listed, but is shown only for a program with a
 // name.
 inline std::vector<std::string> userFileAndHelpMenuActions(
     InputMode mode, bool hasVocabularyManager) {
   std::vector<std::string> names;
-  if (mode == InputMode::McBopomofo) {
+  if (mode == InputMode::McBopomofo && !hasVocabularyManager) {
     names.insert(names.end(),
                  {kEditUserPhrasesAction, kEditExcludedPhrasesAction});
   }
