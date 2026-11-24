@@ -783,10 +783,13 @@ McBopomofoEngine::McBopomofoEngine(fcitx::Instance* instance)
             std::filesystem::path(languageModelLoader_->userDataPath()) /
             "symbol-table.txt";
         // The built-in table, for the user to start from.
-        openUserFile(path, [path] {
-          SmartLearning::createFileIfAbsent(
-              path, SmartLearning::BuiltInSymbolTable());
-        });
+        openUserFile(
+            path,
+            [path] {
+              SmartLearning::createFileIfAbsent(
+                  path, SmartLearning::BuiltInSymbolTable());
+            },
+            /*createInAnyFolder=*/true);
       });
   instance_->userInterfaceManager().registerAction(
       kEditSymbolTableAction, editSymbolTableAction_.get());
@@ -1133,11 +1136,15 @@ void McBopomofoEngine::toggleFloatingComposition(
 }
 
 void McBopomofoEngine::openUserFile(const std::filesystem::path& path,
-                                    const std::function<void()>& create) {
+                                    const std::function<void()>& create,
+                                    bool createInAnyFolder) {
   std::error_code ec;
   bool exists = std::filesystem::exists(path, ec);
-  bool mayCreate = SmartLearning::shouldCreateTemplateFiles(
-      path.parent_path(), languageModelLoader_->defaultUserDataPath());
+  bool mayCreate =
+      (createInAnyFolder &&
+       std::filesystem::is_directory(path.parent_path(), ec)) ||
+      SmartLearning::shouldCreateTemplateFiles(
+          path.parent_path(), languageModelLoader_->defaultUserDataPath());
   switch (userFileOpening(exists, mayCreate)) {
     case UserFileOpening::CreateThenOpen:
       create();

@@ -158,7 +158,9 @@ inline constexpr char kAboutAction[] = "mcbopomofo-about";
 
 // The menu items after the input options, in menu order, in |mode|. The user
 // phrase files of Plain Bopomofo are not edited from the menu; the text
-// templates and the symbol table are the same files in both modes. The
+// templates and the symbol table are the same files in both modes. The text
+// templates are edited in the vocabulary manager when there is one, so the
+// menu item that opens their file is only for a build without it. The
 // floating composition item is listed, but is shown only for a program with a
 // name.
 inline std::vector<std::string> userFileAndHelpMenuActions(
@@ -170,10 +172,11 @@ inline std::vector<std::string> userFileAndHelpMenuActions(
   }
   if (hasVocabularyManager) {
     names.emplace_back(kManageVocabularyAction);
+  } else {
+    names.emplace_back(kEditTextTemplatesAction);
   }
-  names.insert(names.end(),
-               {kEditTextTemplatesAction, kEditSymbolTableAction,
-                kFloatingCompositionAction, kUserGuideAction, kAboutAction});
+  names.insert(names.end(), {kEditSymbolTableAction, kFloatingCompositionAction,
+                             kUserGuideAction, kAboutAction});
   return names;
 }
 
@@ -574,9 +577,12 @@ class McBopomofoEngine : public fcitx::InputMethodEngine {
 
   // Opens the text templates or the symbol table file at |path| with the
   // configured program, creating it first in the default folder (|create|
-  // writes it); a missing file elsewhere is only told about.
+  // writes it); a missing file elsewhere is only told about, unless
+  // |createInAnyFolder| (the symbol table, which starts as a copy of the
+  // built-in one, as on the Mac) and the folder exists.
   void openUserFile(const std::filesystem::path& path,
-                    const std::function<void()>& create);
+                    const std::function<void()>& create,
+                    bool createInAnyFolder = false);
 
   // Switches to |layout| from the menu: saves it, drops any composing text
   // without committing, and tells the user.
