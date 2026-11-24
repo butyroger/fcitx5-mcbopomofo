@@ -118,7 +118,7 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Sy --noconfirm archlinux-keyring
-          pacman -Sy --noconfirm gcc cmake make pkg-config extra-cmake-modules fmt fcitx5 fcitx5-chinese-addons fcitx5-gtk fcitx5-qt
+          pacman -Syu --noconfirm gcc cmake make pkg-config extra-cmake-modules fmt fcitx5 fcitx5-chinese-addons fcitx5-gtk fcitx5-qt
       - name: Build
         run: |
           mkdir -p build
